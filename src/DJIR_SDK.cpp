@@ -5,6 +5,10 @@
 #include "USBCAN_SDK.h"
 using namespace USBCAN_SDK;
 
+/*
+THIS IS A COMMENT FOR TESTING EDITING IN REGARD TO GIT MODULE
+*/
+
 enum FLAG : uint8_t {
     BIT1 = 0x01,
     BIT2 = 0x02,
