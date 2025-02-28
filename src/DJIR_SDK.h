@@ -126,11 +126,19 @@ public:
     /// @return 
     bool recenter (void);
 
-    /// @brief          Set absolute position value for focus motor. 
+
+    /// @brief          Set absolute position value in calibrated limitation range for focus motor. 
     ///                 Expecting 100Hz pushing rate, timing mechanism implemented by caller.
     /// @param uiPos    Adsolute position, 0~4095
     /// @return         True if success
     bool set_focus_motor_pos (uint16_t uiPos);
+
+
+    /// @brief  Command the gimbal to start focus motor auto calibration for limitation
+    /// @param  
+    /// @return True if success
+    bool start_focus_motor_auto_cal (void);
+
 
 private:
     void* _can_conn;

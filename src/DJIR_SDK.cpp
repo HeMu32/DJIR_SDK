@@ -218,7 +218,7 @@ bool DJIR_SDK::DJIRonin::recenter (void)
 
 bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
 {
-    // Structure copied from recenter function
+    // Structure copied from recenter() function
     uint8_t cmd_type = 0x00;
     uint8_t cmd_set  = 0x0E;
     uint8_t cmd_id   = 0x12;
@@ -229,9 +229,35 @@ bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
     {
         0x01,       // Foucs motor control
         0x00,       // Focus control
-        0x02,       // Data length (2 bytes)
-        (uint8_t)(uiPos),       // Assume BE, unconfrimed
-        (uint8_t)(uiPos>>8)
+        0x02,       // Data length (2 bytes), defined by SDK protocol
+        u8PosLo,       // Convert to little endian
+        u8PosHi
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
+}
+
+bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
+{
+    // Structure copied from recenter() function
+    uint8_t cmd_type = 0x03;
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x12;
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x02,       // Foucs motor calibration
+        0x00,       // RS focus motor
+        0x01        // Auto calibration
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);

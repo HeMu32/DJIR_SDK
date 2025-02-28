@@ -166,12 +166,12 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
     {
         switch (*(uint16_t*)&cmd_key[0]) {
         case 0x000e:
-        {
+        {   // Response for posControl
             printf("get posControl request\n");
             break;
         }
         case 0x020e:
-        {
+        {   // Response for getGimbalInfo
 //            printf("get getGimbalInfo request\n");
 //            if (data[13] == 0x00)
 //                std::cout << "Data is not ready\n" << std::endl;
@@ -179,12 +179,6 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
 //                std::cout << "The current angle is attitude angle\n"<<std::endl;
 //            if (data[13] == 0x02)
 //                std::cout << "The current angle is joint angle\n" << std::endl;
-
-            // Dump data to view
-
-            void *pTmpDataDump = calloc (1024, 1);
-            for (unsigned ui = 0; ui < sizeof(data.size()); ui++)
-                ((int16_t*)(pTmpDataDump))[ui] = *(int16_t*)&data.data()[ui];
 
             _yaw    = *(int16_t*)&data.data()[16];  // originally 14 16 18, however dosen't work
             _roll   = *(int16_t*)&data.data()[18];
@@ -195,25 +189,24 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             _input_position_ready_flag = true;
             _input_position_cond_var.notify_one();
 
-
             break;
         }
         case 0x080E:
-        {
+        {   // Param push from gimbal
             printf("get param push\n");
             break;
         }
         case 0x0E0E:
-        {
+        {   // Response for recenter
             printf("get recenter response\n");
             break;
         }
         default:
         {
-            printf("--get unknown request\n");
-            printf("--%#004X\n", *(uint16_t*)&cmd_key[0]);
-            for (unsigned ui = 0; ui < sizeof(data.size()); ui++)
-                printf ("%u-%u %#004X\n", 2*ui+1, 2*ui, *(int16_t*)&data.data()[ui]);
+            printf("--get unhandeld request\n");
+            printf("--0x%04X\n", *(uint16_t*)&cmd_key[0]);
+            for (unsigned ui = 0; ui < data.size(); ui++)   // print dump data to console
+                printf ("%02u 0x%02X\n", ui, (uint8_t)data[ui]);
 
             break;
         }
