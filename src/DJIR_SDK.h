@@ -120,7 +120,17 @@ public:
      */
     bool get_current_position(int16_t& yaw, int16_t& roll, int16_t& pitch);
     
+
+    /// @brief  Not working, may try setpos(0,0,0) instead
+    /// @param  
+    /// @return 
     bool recenter (void);
+
+    /// @brief          Set absolute position value for focus motor. 
+    ///                 Expecting 100Hz pushing rate, timing mechanism implemented by caller.
+    /// @param uiPos    Adsolute position, 0~4095
+    /// @return         True if success
+    bool set_focus_motor_pos (uint16_t uiPos);
 
 private:
     void* _can_conn;

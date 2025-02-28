@@ -5,9 +5,6 @@
 #include "USBCAN_SDK.h"
 using namespace USBCAN_SDK;
 
-/*
-THIS IS A COMMENT FOR TESTING EDITING IN REGARD TO GIT MODULE
-*/
 
 enum FLAG : uint8_t {
     BIT1 = 0x01,
@@ -24,8 +21,8 @@ DJIR_SDK::DJIRonin::DJIRonin()
     _position_ctrl_byte = 0;
     _speed_ctrl_byte  = 0;
 
-    _position_ctrl_byte |= BIT1; //MoveMode - ABSOLUTE_CONTROL
-    _speed_ctrl_byte |= BIT3; //SpeedControl - DISABLED, FocalControl - DISABLED
+    _position_ctrl_byte |= BIT1;    //MoveMode - ABSOLUTE_CONTROL
+    _speed_ctrl_byte |= BIT3;       //SpeedControl - DISABLED, FocalControl - DISABLED
     _cmd_cmb = new CmdCombine();
 }
 
@@ -36,8 +33,8 @@ DJIR_SDK::DJIRonin::~DJIRonin()
 
 bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
 {
-    int send_id = 0x223;    // CAN Tx for PC side
-    int recv_id = 0x222;    // CAN Rx for PC side
+    int send_id = 0x223;    // CAN Tx No for PC side
+    int recv_id = 0x222;    // CAN Rx No for PC side
     std::string stCANBoxType = "GC_USBCAN";
 
     // Connect to DJIR gimbal
@@ -51,6 +48,7 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
 
 bool DJIR_SDK::DJIRonin::disconnect()
 {
+    ((CANConnection*)_can_conn)->~CANConnection();
     return true;
 }
 
@@ -110,8 +108,15 @@ bool DJIR_SDK::DJIRonin::set_move_mode(DJIR_SDK::MoveMode type)
     if (type == MoveMode::INCREMENTAL_CONTROL)
     {
         _position_ctrl_byte &= ~BIT1;
-    }else
+    }
+    else if (type == MoveMode::ABSOLUTE_CONTROL)
+    {
         _position_ctrl_byte |= BIT1;
+    }
+    else
+    {
+        return false;
+    }
 
     return true;
 }
@@ -158,6 +163,12 @@ bool DJIR_SDK::DJIRonin::set_speed_mode(DJIR_SDK::SpeedControl speed_type, DJIR_
     return true;
 }
 
+
+/// @brief 
+/// @param yaw 
+/// @param roll     Roll position report value dosen't go beyond 300
+/// @param pitch 
+/// @return 
 bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16_t &pitch)
 {
     uint8_t cmd_type = 0x03;
@@ -203,4 +214,34 @@ bool DJIR_SDK::DJIRonin::recenter (void)
     else
         return false;
     
+}
+
+bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
+{
+    // Structure copied from recenter function
+    uint8_t cmd_type = 0x00;
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x12;
+    uint8_t u8PosLo  = (uint8_t)(uiPos);
+    uint8_t u8PosHi  = (uint8_t)(uiPos>>8);
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01,       // Foucs motor control
+        0x00,       // Focus control
+        0x02,       // Data length (2 bytes)
+        (uint8_t)(uiPos),       // Assume BE, unconfrimed
+        (uint8_t)(uiPos>>8)
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
 }
