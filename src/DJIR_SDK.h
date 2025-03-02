@@ -113,9 +113,9 @@ public:
 
     /**
      * @brief get_current_position - Get Gimbal Information (p.6, 2.3.4.3)
-     * @param yaw Yaw axis angle (unit: 0.1°)
-     * @param roll Roll axis angle (unit: 0.1°)
-     * @param pitch Pitch axis angle (unit: 0.1°)
+     * @param yaw Yaw angle, unit: 0.1° (range: -1800 to +1800)
+     * @param roll Roll angle, unit: 0.1° (range: -1800 to +1800)
+     * @param pitch Pitch angle, unit: 0.1° (range: -1800 to +1800)
      * @return True if success
      */
     bool get_current_position(int16_t& yaw, int16_t& roll, int16_t& pitch);

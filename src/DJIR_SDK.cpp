@@ -163,12 +163,6 @@ bool DJIR_SDK::DJIRonin::set_speed_mode(DJIR_SDK::SpeedControl speed_type, DJIR_
     return true;
 }
 
-
-/// @brief 
-/// @param yaw 
-/// @param roll     Roll position report value dosen't go beyond 300
-/// @param pitch 
-/// @return 
 bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16_t &pitch)
 {
     uint8_t cmd_type = 0x03;

@@ -194,6 +194,7 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
         case 0x080E:
         {   // Param push from gimbal
             printf("get param push\n");
+            /// @todo: parse param push message
             break;
         }
         case 0x0E0E:
