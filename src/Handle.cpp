@@ -170,6 +170,11 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             printf("get posControl request\n");
             break;
         }
+        case 0x010E:
+        {   // Response for speed control
+            printf ("get spd ctrl response\n");
+            break;
+        }
         case 0x020e:
         {   // Response for getGimbalInfo
 //            printf("get getGimbalInfo response\n");
@@ -192,13 +197,33 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             break;
         }
         case 0x080E:
-        {   // Param push from gimbal
+        {   // Param push 
             printf ("get param push\n");
             break;
         }
         case 0x0E0E:
         {   // Response for recenter
             printf("get recenter response\n");
+            break;
+        }
+        case 0x120E:
+        {   // Response of focus motor position polling
+            printf("get focus motor position response\n");
+
+            uint16_t SubCode = (uint8_t)data[13] + ((uint8_t)data[14]) << 8;    // Command ID and motor type
+
+            switch (SubCode)
+            {
+                case 0x0015:    // 0x00: Ronin focus motor, 0x15: position polling
+                {
+                    /// @todo: handel focus motor status message here
+
+                    uint16_t usStat = (uint8_t)data[13];    // byte 13: 1 - not cal. 2 - in progress 3 - finished
+                    uint32_t ulPos  = (uint32_t)data[4];    // byte 16~20: position in lim range, 0 ~ 4095 
+
+                    printf ("Stat: %d   Pos: %l\n", usStat, ulPos);
+                }
+            }
             break;
         }
         default:

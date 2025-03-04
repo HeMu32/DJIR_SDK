@@ -213,9 +213,9 @@ bool DJIR_SDK::DJIRonin::recenter (void)
 bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
 {
     // Structure copied from recenter() function
-    uint8_t cmd_type = 0x00;
+    uint8_t cmd_type = 0x00;    // No response in need
     uint8_t cmd_set  = 0x0E;
-    uint8_t cmd_id   = 0x12;
+    uint8_t cmd_id   = 0x12;    // Focus motor
     uint8_t u8PosLo  = (uint8_t)(uiPos);
     uint8_t u8PosHi  = (uint8_t)(uiPos>>8);
 
@@ -240,12 +240,36 @@ bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
         return false;
 }
 
+bool DJIR_SDK::DJIRonin::get_focus_motor_pos (void)
+{
+    uint8_t cmd_type = 0x02;    // response in need
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x12;    // focus motor
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x15,       // Position poll
+        0x00        // RS focus motor
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
+}
+
 bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
 {
     // Structure copied from recenter() function
     uint8_t cmd_type = 0x03;    // response in need
     uint8_t cmd_set  = 0x0E;
-    uint8_t cmd_id   = 0x12;
+    uint8_t cmd_id   = 0x12;    // focus motor
 
     std::vector<uint8_t> data_payload =
     {
