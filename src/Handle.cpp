@@ -208,7 +208,7 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
         }
         case 0x120E:
         {   // Response of focus motor position polling
-            printf("get focus motor position response\n");
+            printf("get focus motor response\n");
 
             uint16_t SubCode = (uint8_t)data[13] + ((uint8_t)data[14]) << 8;    // Command ID and motor type
 

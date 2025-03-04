@@ -246,7 +246,7 @@ bool DJIR_SDK::DJIRonin::get_focus_motor_pos (void)
     uint8_t cmd_set  = 0x0E;
     uint8_t cmd_id   = 0x12;    // focus motor
 
-    std::vector<uint8_t> data_payload =
+    std::vector<uint8_t> data_payload
     {
         0x15,       // Position poll
         0x00        // RS focus motor

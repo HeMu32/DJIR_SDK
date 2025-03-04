@@ -135,6 +135,7 @@ public:
 
 
     /// @brief          Get current position in calibrated limitation range of focus motor.
+    ///                 Not working with RS 2. No alternative. May avoid to use.
     ///                 Expect data handler (Handel.cpp/_process_cmd()) to deliver proper msg to message tunnel.
     /// @param flagStat Calibration status, 0 - not calibrated, 1 - auto cal in progress, 2 - finished.
     /// @param iPos     Absolute position the motor is in the limitation range, 0~4095.
