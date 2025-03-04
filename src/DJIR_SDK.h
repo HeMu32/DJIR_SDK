@@ -140,6 +140,15 @@ public:
     bool start_focus_motor_auto_cal (void);
 
 
+    /// @brief      Push joystick position to gimbal to controll movement.
+    ///             Expected to be called with an interval, or it exaust the system.
+    ///             Interval of 50ms has been proven to work.
+    /// @param iX   x position (horizontal), -15,000 ~ 15,000, mapped to pitch.
+    /// @param iY   y position (vertical),   -15,000 ~ 15,000, mapped to yaw.
+    /// @return     True if success
+    bool push_joystick_pos_movement (uint16_t iX, uint16_t iY);
+
+
 private:
     void* _can_conn;
     void* _pack_thread;

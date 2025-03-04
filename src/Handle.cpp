@@ -172,7 +172,7 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
         }
         case 0x020e:
         {   // Response for getGimbalInfo
-//            printf("get getGimbalInfo request\n");
+//            printf("get getGimbalInfo response\n");
 //            if (data[13] == 0x00)
 //                std::cout << "Data is not ready\n" << std::endl;
 //            if (data[13] == 0x01)
@@ -193,8 +193,7 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
         }
         case 0x080E:
         {   // Param push from gimbal
-            printf("get param push\n");
-            /// @todo: parse param push message
+            printf ("get param push\n");
             break;
         }
         case 0x0E0E:

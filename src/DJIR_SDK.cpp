@@ -243,7 +243,7 @@ bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
 bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
 {
     // Structure copied from recenter() function
-    uint8_t cmd_type = 0x03;
+    uint8_t cmd_type = 0x03;    // response in need
     uint8_t cmd_set  = 0x0E;
     uint8_t cmd_id   = 0x12;
 
@@ -252,6 +252,35 @@ bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
         0x02,       // Foucs motor calibration
         0x00,       // RS focus motor
         0x01        // Auto calibration
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
+}
+
+bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
+{
+    uint8_t cmd_type = 0x00;    // no response in need
+    uint8_t cmd_set  = 0x0E;    
+    uint8_t cmd_id   = 0x0A;    // param push from external device
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01,   // joystick controller
+        (uint8_t)(iY),
+        (uint8_t)(iY>>8),   // map Y pos to vertical movement
+        0x00,
+        0x00,               // leave roll parameter blank
+        (uint8_t)(iX),
+        (uint8_t)(iX>>8)    // map X pos to horizontal movement
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
