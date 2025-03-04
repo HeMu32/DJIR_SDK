@@ -55,9 +55,10 @@ bool DJIR_SDK::DJIRonin::disconnect()
 bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint16_t time_ms)
 {
     uint8_t cmd_type = 0x03;
-    uint8_t cmd_set = 0x0E;
-    uint8_t cmd_id = 0x00;
-    uint8_t time = (uint8_t)(time_ms/100);
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x00;
+    uint8_t time     = (uint8_t)(time_ms/100);
+
     std::vector<uint8_t> data_payload =
     {
         ((uint8_t*)&yaw)[0],((uint8_t*)&yaw)[1],
@@ -65,6 +66,7 @@ bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint1
         ((uint8_t*)&pitch)[0],((uint8_t*)&pitch)[1],
         _position_ctrl_byte, time
     };
+    
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
     ((DataHandle*)_pack_thread)->add_cmd(cmd);
     int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
@@ -123,6 +125,10 @@ bool DJIR_SDK::DJIRonin::set_move_mode(DJIR_SDK::MoveMode type)
 
 bool DJIR_SDK::DJIRonin::set_speed(uint16_t yaw, uint16_t roll, uint16_t pitch)
 {
+    if (yaw > 3600)     yaw     = 3600;
+    if (roll > 3600)    roll    = 3600;
+    if (pitch > 3600)   pitch   = 3600;
+
     uint8_t cmd_type = 0x03;
     uint8_t cmd_set  = 0x0E;
     uint8_t cmd_id   = 0x01;
@@ -292,6 +298,11 @@ bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
 
 bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
 {
+    if (iX > 15000) iX = 15000;
+    if (iY > 15000) iY = 15000;
+    if (iX < -15000) iX = -15000;
+    if (iY < -15000) iY = -15000;
+
     uint8_t cmd_type = 0x00;    // no response in need
     uint8_t cmd_set  = 0x0E;    
     uint8_t cmd_id   = 0x0A;    // param push from external device
