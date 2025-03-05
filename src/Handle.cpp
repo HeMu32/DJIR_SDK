@@ -175,6 +175,16 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             printf ("get spd ctrl response\n");
             break;
         }
+        case 0x090E:
+        {   // Version info
+            uint32_t device_id  = ((uint8_t)data[15]) + ((uint8_t)data[16] << 8)
+                        + ((uint8_t)data[17] << 16)  + ((uint8_t)data[18] << 24);
+            uint8_t  device_ver = ((uint8_t)data[19]) + ((uint8_t)data[20] << 8)
+                        + ((uint8_t)data[21] << 16)  + ((uint8_t)data[22] << 24);
+            
+            // handle data here
+            break;
+        }
         case 0x020e:
         {   // Response for getGimbalInfo
 //            printf("get getGimbalInfo response\n");

@@ -66,7 +66,7 @@ bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint1
         ((uint8_t*)&pitch)[0],((uint8_t*)&pitch)[1],
         _position_ctrl_byte, time
     };
-    
+
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
     ((DataHandle*)_pack_thread)->add_cmd(cmd);
     int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
@@ -328,4 +328,31 @@ bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
     }
     else
         return false;
+}
+
+bool DJIR_SDK::DJIRonin::request_device_version (void)
+{
+    uint8_t cmd_type = 0x02;    // response in need
+    uint8_t cmd_set  = 0x0E;    
+    uint8_t cmd_id   = 0x09;    // get version number
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01,
+        0x00,
+        0x00,
+        0x00    // device ID: 0x00000001: DJI R SDK
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
+
 }

@@ -157,6 +157,11 @@ public:
     /// @return     True if success
     bool push_joystick_pos_movement (uint16_t iX, uint16_t iY);
 
+    /// @brief  Request the device to response with device version
+    /// @param  
+    /// @return 
+    bool request_device_version (void);
+
 
 private:
     void* _can_conn;
