@@ -52,6 +52,33 @@ bool DJIR_SDK::DJIRonin::disconnect()
     return true;
 }
 
+bool DJIR_SDK::DJIRonin::request_device_version (void)
+{
+    uint8_t cmd_type = 0x02;    // response in need
+    uint8_t cmd_set  = 0x0E;    
+    uint8_t cmd_id   = 0x09;    // get version number
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01,
+        0x00,
+        0x00,
+        0x00    // device ID: 0x00000001: DJI R SDK
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
+    }
+    else
+        return false;
+
+}
+
 bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint16_t time_ms)
 {
     uint8_t cmd_type = 0x03;
@@ -296,6 +323,75 @@ bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
         return false;
 }
 
+int  DJIR_SDK::DJIRonin::set_focal_len_to_focus_motor_pos (uint16_t uiFocal, uint16_t uiPos)
+{
+    if (uiPos > 4095)
+        return -1;
+    
+    std::pair<uint16_t, uint16_t> DataPoint = {uiFocal ,uiPos};
+    if (vecMotorCalPoints.empty())
+    {   // empty list
+        vecMotorCalPoints.insert (vecMotorCalPoints.begin(), DataPoint);
+        return 0;
+    }
+    if (uiPos < vecMotorCalPoints.at(0).second)
+    {   // if smaller than the smallest position mark
+        vecMotorCalPoints.insert (vecMotorCalPoints.begin() + 0, DataPoint);
+        return 0;
+    }
+    for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
+    {   // go thru the list
+        if (uiPos > vecMotorCalPoints.at(ui).second)
+        {   // if position bigger than the current seeked position mark
+            vecMotorCalPoints.insert (vecMotorCalPoints.begin() + ui + 1, DataPoint);
+            return 0;
+        }
+    }
+
+    for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
+    {   // print to console, not reachable in normal state as all code above has a return statement
+        printf ("No.%u %u %u\n", 
+                ui,
+                vecMotorCalPoints.at(ui).first, 
+                vecMotorCalPoints.at(ui).second);
+    }
+
+    return -1;
+}
+
+int  DJIR_SDK::DJIRonin::get_focal_len_from_focus_motor_pos (uint16_t uiPos)
+{
+    if (uiPos > 4095)
+        return -1;
+
+    
+    if (uiPos < vecMotorCalPoints.at(0).second)
+    {   // smaller than the first mark, return the focal of the first mark
+        return vecMotorCalPoints.at(0).first;
+    }
+    for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
+    {   // go thru the list
+        if (uiPos > vecMotorCalPoints.at(ui).second)
+        {   // if position bigger than the current seeked position mark
+            if (ui == vecMotorCalPoints.size() - 1)
+            {   // if bigger than last mark: out of range, return the focal of the last mark
+                return vecMotorCalPoints.at(ui).first;
+            }
+
+            std::pair<int16_t, int16_t> point1 = vecMotorCalPoints.at(ui);
+            std::pair<int16_t, int16_t> point2 = vecMotorCalPoints.at(ui + 1);
+
+            int ret = (int)(((float)(point2.first - point1.first) / (point2.second - point1.second)) * \
+                             (uiPos - point1.second) + \
+                             point1.first);
+            
+            return ret;
+        }
+    }
+
+    return -1;
+}
+
 bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
 {
     if (iX > 15000) iX = 15000;
@@ -328,31 +424,4 @@ bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
     }
     else
         return false;
-}
-
-bool DJIR_SDK::DJIRonin::request_device_version (void)
-{
-    uint8_t cmd_type = 0x02;    // response in need
-    uint8_t cmd_set  = 0x0E;    
-    uint8_t cmd_id   = 0x09;    // get version number
-
-    std::vector<uint8_t> data_payload =
-    {
-        0x01,
-        0x00,
-        0x00,
-        0x00    // device ID: 0x00000001: DJI R SDK
-    };
-
-    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
-
 }

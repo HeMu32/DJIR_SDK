@@ -61,6 +61,12 @@ public:
      */
     bool disconnect();
 
+
+    /// @brief  Request the device to response with device version
+    /// @param  
+    /// @return 
+    bool request_device_version (void);
+
     /**
      * @brief           move_to - Handheld Gimbal Position Control (p.5, 2.3.4.1)
      * @param iYaw      Yaw angle, unit: 0.1°   (range: -1800 to +1800)
@@ -127,6 +133,15 @@ public:
     bool recenter (void);
 
 
+    /// @brief      Push joystick position to gimbal to controll movement.
+    ///             Expected to be called with an interval, or it exaust the system.
+    ///             Interval of 50ms has been proven to work.
+    /// @param iX   x position (horizontal), -15,000 ~ 15,000, mapped to pitch.
+    /// @param iY   y position (vertical),   -15,000 ~ 15,000, mapped to yaw.
+    /// @return     True if success
+    bool push_joystick_pos_movement (uint16_t iX, uint16_t iY);
+
+
     /// @brief          Set absolute position value in calibrated limitation range for focus motor. 
     ///                 Expecting 100Hz pushing rate, timing mechanism implemented by caller.
     /// @param uiPos    Adsolute position, 0~4095
@@ -143,32 +158,40 @@ public:
     bool get_focus_motor_pos (void);
 
 
+    /// @brief          Set a focus motor calibration point to map motor position to focal.
+    /// @param uiFocal  Focal length.
+    /// @param uiPos    Position of focus motor, 0 ~ 4095.
+    /// @return         
+    int set_focal_len_to_focus_motor_pos (uint16_t uiFocal, uint16_t uiPos);
+
+
+    /// @brief          Parse focal length.
+    /// @param uiPos    Position of focus motor, 0 ~ 4095.
+    /// @return         Focal length on the current position, or negative value if error.
+    int get_focal_len_from_focus_motor_pos (uint16_t uiPos);
+
+
+    /// @brief  Delete mapping info between focal length and motor position
+    /// @return 
+    bool clear_focus_motor_mapping (void);
+
+
     /// @brief  Command the gimbal to start focus motor auto calibration for limitation
     /// @param  
     /// @return True if success
     bool start_focus_motor_auto_cal (void);
 
 
-    /// @brief      Push joystick position to gimbal to controll movement.
-    ///             Expected to be called with an interval, or it exaust the system.
-    ///             Interval of 50ms has been proven to work.
-    /// @param iX   x position (horizontal), -15,000 ~ 15,000, mapped to pitch.
-    /// @param iY   y position (vertical),   -15,000 ~ 15,000, mapped to yaw.
-    /// @return     True if success
-    bool push_joystick_pos_movement (uint16_t iX, uint16_t iY);
-
-    /// @brief  Request the device to response with device version
-    /// @param  
-    /// @return 
-    bool request_device_version (void);
-
 
 private:
-    void* _can_conn;
-    void* _pack_thread;
+    void   *_can_conn;
+    void   *_pack_thread;
     uint8_t _position_ctrl_byte;
     uint8_t _speed_ctrl_byte;
-    void* _cmd_cmb;
+    void   *_cmd_cmb;
+
+    // For mapping between focal length and motor position. [0] Focal, [1] motor position
+    std::vector<std::pair<int16_t, int16_t>> vecMotorCalPoints;
 };
 
 
