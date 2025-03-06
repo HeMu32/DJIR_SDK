@@ -22,7 +22,7 @@ DJIR_SDK::DJIRonin::DJIRonin()
     _speed_ctrl_byte  = 0;
 
     _position_ctrl_byte |= BIT1;    //MoveMode - ABSOLUTE_CONTROL
-    _speed_ctrl_byte |= BIT3;       //SpeedControl - DISABLED, FocalControl - DISABLED
+    _speed_ctrl_byte    |= BIT3;    //SpeedControl - DISABLED, FocalControl - DISABLED
     _cmd_cmb = new CmdCombine();
 }
 
@@ -33,8 +33,8 @@ DJIR_SDK::DJIRonin::~DJIRonin()
 
 bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
 {
-    int send_id = 0x223;    // CAN Tx No for PC side
-    int recv_id = 0x222;    // CAN Rx No for PC side
+    int send_id = 0x223;    // CAN Tx No. for PC side
+    int recv_id = 0x222;    // CAN Rx No. for PC side
     std::string stCANBoxType = "GC_USBCAN";
 
     // Connect to DJIR gimbal
@@ -335,21 +335,21 @@ int  DJIR_SDK::DJIRonin::set_focal_len_to_focus_motor_pos (uint16_t uiFocal, uin
         return 0;
     }
     if (uiPos < vecMotorCalPoints.at(0).second)
-    {   // if smaller than the smallest position mark
+    {   // if input positoin smaller than the smallest position mark
         vecMotorCalPoints.insert (vecMotorCalPoints.begin() + 0, DataPoint);
         return 0;
     }
     for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
     {   // go thru the list
         if (uiPos > vecMotorCalPoints.at(ui).second)
-        {   // if position bigger than the current seeked position mark
+        {   // if input position bigger than the current seeked position mark
             vecMotorCalPoints.insert (vecMotorCalPoints.begin() + ui + 1, DataPoint);
             return 0;
         }
     }
 
     for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
-    {   // print to console, not reachable in normal state as all code above has a return statement
+    {   // print to console, not reachable in normal states as all code above has a return statement
         printf ("No.%u %u %u\n", 
                 ui,
                 vecMotorCalPoints.at(ui).first, 
@@ -363,16 +363,15 @@ int  DJIR_SDK::DJIRonin::get_focal_len_from_focus_motor_pos (uint16_t uiPos)
 {
     if (uiPos > 4095)
         return -1;
-
     
     if (uiPos < vecMotorCalPoints.at(0).second)
-    {   // smaller than the first mark, return the focal of the first mark
+    {   // smaller than the first mark: out of range, return the focal of the first mark
         return vecMotorCalPoints.at(0).first;
     }
     for (unsigned ui = 0; ui < vecMotorCalPoints.size(); ui++)
     {   // go thru the list
         if (uiPos > vecMotorCalPoints.at(ui).second)
-        {   // if position bigger than the current seeked position mark
+        {   // if input position bigger than the current seeked position mark
             if (ui == vecMotorCalPoints.size() - 1)
             {   // if bigger than last mark: out of range, return the focal of the last mark
                 return vecMotorCalPoints.at(ui).first;
