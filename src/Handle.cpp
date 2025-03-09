@@ -217,15 +217,15 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             break;
         }
         case 0x120E:
-        {   // Response of focus motor position polling
+        {   // Response of focus motor position polling.
             printf("get focus motor response\n");
 
             uint16_t SubCode = (uint8_t)data[13] + ((uint8_t)data[14]) << 8;    // Command ID and motor type
 
             switch (SubCode)
             {
-                case 0x0015:    // 0x00: Ronin focus motor, 0x15: position polling
-                {
+                case 0x0015:
+                {   // 0x00: Ronin focus motor, 0x15: position polling Seems not working with RS2.
                     /// @todo: handel focus motor status message here
 
                     uint16_t usStat = (uint8_t)data[13];    // byte 13: 1 - not cal. 2 - in progress 3 - finished
