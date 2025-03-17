@@ -139,7 +139,7 @@ public:
     /// @param iX   x position (horizontal), -15,000 ~ 15,000, mapped to pitch.
     /// @param iY   y position (vertical),   -15,000 ~ 15,000, mapped to yaw.
     /// @return     True if success
-    bool push_joystick_pos_movement (uint16_t iX, uint16_t iY);
+    bool push_joystick_pos_movement (int16_t iX, int16_t iY);
 
 
     /// @brief          Set absolute position value in calibrated limitation range for focus motor. 

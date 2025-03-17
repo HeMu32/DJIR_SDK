@@ -323,12 +323,16 @@ bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
         return false;
 }
 
-bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (uint16_t iX, uint16_t iY)
+bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (int16_t iX, int16_t iY)
 {
+    iX = -iX;
+    iY = -iY;
+
     if (iX > 15000) iX = 15000;
     if (iY > 15000) iY = 15000;
     if (iX < -15000) iX = -15000;
     if (iY < -15000) iY = -15000;
+
 
     uint8_t cmd_type = 0x00;    // no response in need
     uint8_t cmd_set  = 0x0E;    
