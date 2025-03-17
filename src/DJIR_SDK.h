@@ -158,19 +158,6 @@ public:
     bool get_focus_motor_pos (void);
 
 
-    /// @brief          Set a focus motor calibration point to map motor position to focal.
-    /// @param uiFocal  Focal length.
-    /// @param uiPos    Position of focus motor, 0 ~ 4095.
-    /// @return         
-    int set_focal_len_to_focus_motor_pos (uint16_t uiFocal, uint16_t uiPos);
-
-
-    /// @brief          Parse focal length.
-    /// @param uiPos    Position of focus motor, 0 ~ 4095.
-    /// @return         Focal length on the current position, or negative value if error.
-    int get_focal_len_from_focus_motor_pos (uint16_t uiPos);
-
-
     /// @brief  Delete mapping info between focal length and motor position
     /// @return 
     bool clear_focus_motor_mapping (void);
@@ -190,8 +177,6 @@ private:
     uint8_t _speed_ctrl_byte;
     void   *_cmd_cmb;
 
-    // For mapping between focal length and motor position. [0] Focal, [1] motor position
-    std::vector<std::pair<int16_t, int16_t>> vecMotorCalPoints;
 };
 
 
