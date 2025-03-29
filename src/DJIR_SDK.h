@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <vector>
+#include <functional>
 
 #if (defined _WIN32 && defined RF62X_LIBRARY)
 #define API_EXPORT __declspec(dllexport)
@@ -116,7 +117,6 @@ public:
      */
     bool set_speed_mode(SpeedControl speed_type, FocalControl focal_type);
 
-
     /**
      * @brief           get_current_position - Get Gimbal Information (p.6, 2.3.4.3)
      * @param iYaw      Yaw angle, unit: 0.1° (range: -1800 to +1800)
@@ -125,7 +125,10 @@ public:
      * @return          True if success
      */
     bool get_current_position(int16_t &iYaw, int16_t &iRoll, int16_t &iPitch);
-    
+
+    /// @brief  Sned position query command only. Receving handled elsewhere. For ansync. processing.
+    /// @return 
+    bool query_current_position();
 
     /// @brief  Not working, may try setpos(0,0,0) instead
     /// @param  
@@ -169,6 +172,16 @@ public:
     bool start_focus_motor_auto_cal (void);
 
 
+    
+    // 在 DJIRonin 类的公共方法部分添加
+    /**
+     * @brief 设置位置更新回调函数
+     * @param callback 回调函数
+     * @return 是否成功设置
+     */
+    bool set_position_update_callback(std::function<void(int16_t, int16_t, int16_t)> callback);
+
+
 
 private:
     void   *_can_conn;
@@ -184,3 +197,4 @@ private:
 
 
 #endif //DJI_R_SDK_H
+

@@ -164,6 +164,10 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
 
     if (is_ok)
     {
+        static unsigned long ulMsgCnt = 0;
+        ulMsgCnt++;
+        printf ("MSG %lu on CAN\n", ulMsgCnt);
+
         switch (*(uint16_t*)&cmd_key[0]) {
         case 0x000e:
         {   // Response for posControl
@@ -185,25 +189,32 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             // handle data here
             break;
         }
+        
+        // 修改 _process_cmd 方法中的 case 0x020e 部分
         case 0x020e:
         {   // Response for getGimbalInfo
-//            printf("get getGimbalInfo response\n");
-//            if (data[13] == 0x00)
-//                std::cout << "Data is not ready\n" << std::endl;
-//            if (data[13] == 0x01)
-//                std::cout << "The current angle is attitude angle\n"<<std::endl;
-//            if (data[13] == 0x02)
-//                std::cout << "The current angle is joint angle\n" << std::endl;
-
+        //            printf("get getGimbalInfo response\n");
+        //            if (data[13] == 0x00)
+        //                std::cout << "Data is not ready\n" << std::endl;
+        //            if (data[13] == 0x01)
+        //                std::cout << "The current angle is attitude angle\n"<<std::endl;
+        //            if (data[13] == 0x02)
+        //                std::cout << "The current angle is joint angle\n" << std::endl;
+        
             _yaw    = *(int16_t*)&data.data()[16];  // originally 14 16 18, however dosen't work
             _roll   = *(int16_t*)&data.data()[18];
             _pitch  = *(int16_t*)&data.data()[20];
-
-//            std::cout << "yaw = " << _yaw << " roll = " << _roll << " pitch = " << _pitch << std::endl;
-
+        
+            std::cout << "yaw = " << _yaw << " roll = " << _roll << " pitch = " << _pitch << std::endl;
+        
+            // 调用回调函数，如果已设置
+            if (_position_update_callback) {
+                _position_update_callback(_yaw, _roll, _pitch);
+            }
+            
             _input_position_ready_flag = true;
             _input_position_cond_var.notify_one();
-
+        
             break;
         }
         case 0x080E:
@@ -277,4 +288,11 @@ bool DJIR_SDK::DataHandle::_check_pack_crc(std::vector<uint8_t> data)
     if (crc32 == recv_crc)
         return true;
     return false;
+}
+
+
+// 添加在适当位置，例如在 DataHandle 构造函数之后
+void DJIR_SDK::DataHandle::set_position_update_callback(PositionUpdateCallback callback)
+{
+    _position_update_callback = callback;
 }

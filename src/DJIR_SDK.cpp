@@ -212,7 +212,30 @@ bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16
     int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
     if (ret > 0)
     {
-        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, 1000);;
+        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, 50);;      ////////////////////////////////////////////
+    }
+    else
+        return false;
+}
+
+bool DJIR_SDK::DJIRonin::query_current_position()
+{
+    uint8_t cmd_type = 0x03;
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x02;
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+    {
+        return true;
     }
     else
         return false;
@@ -359,4 +382,14 @@ bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (int16_t iX, int16_t iY)
     }
     else
         return false;
+}
+
+// 实现 set_position_update_callback 方法
+bool DJIR_SDK::DJIRonin::set_position_update_callback(std::function<void(int16_t, int16_t, int16_t)> callback)
+{
+    if (_pack_thread) {
+        ((DataHandle*)_pack_thread)->set_position_update_callback(callback);
+        return true;
+    }
+    return false;
 }
