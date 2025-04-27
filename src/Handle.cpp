@@ -166,17 +166,22 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
     {
         static unsigned long ulMsgCnt = 0;
         ulMsgCnt++;
+#ifdef _DEBUG_GIMBALMSG
         printf ("MSG %lu on CAN\n", ulMsgCnt);
-
+#endif
         switch (*(uint16_t*)&cmd_key[0]) {
         case 0x000e:
         {   // Response for posControl
+#ifdef _DEBUG_GIMBALMSG
             printf("get posControl request\n");
+#endif
             break;
         }
         case 0x010E:
         {   // Response for speed control
+#ifdef _DEBUG_GIMBALMSG
             printf ("get spd ctrl response\n");
+#endif
             break;
         }
         case 0x090E:
@@ -204,9 +209,9 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             _yaw    = *(int16_t*)&data.data()[16];  // originally 14 16 18, however dosen't work
             _roll   = *(int16_t*)&data.data()[18];
             _pitch  = *(int16_t*)&data.data()[20];
-        
+#ifdef _DEBUG_GIMBALMSG
             std::cout << "yaw = " << _yaw << " roll = " << _roll << " pitch = " << _pitch << std::endl;
-        
+#endif
             // 调用回调函数，如果已设置
             if (_position_update_callback) {
                 _position_update_callback(_yaw, _roll, _pitch);
@@ -219,18 +224,23 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
         }
         case 0x080E:
         {   // Param push 
+#ifdef _DEBUG_GIMBALMSG
             printf ("get param push\n");
+#endif
             break;
         }
         case 0x0E0E:
         {   // Response for recenter
+#ifdef _DEBUG_GIMBALMSG
             printf("get recenter response\n");
+#endif
             break;
         }
         case 0x120E:
         {   // Response of focus motor position polling.
+#ifdef _DEBUG_GIMBALMSG
             printf("get focus motor response\n");
-
+#endif
             uint16_t SubCode = (uint8_t)data[13] + ((uint8_t)data[14]) << 8;    // Command ID and motor type
 
             switch (SubCode)
@@ -241,19 +251,21 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
 
                     uint16_t usStat = (uint8_t)data[13];    // byte 13: 1 - not cal. 2 - in progress 3 - finished
                     uint32_t ulPos  = (uint32_t)data[4];    // byte 16~20: position in lim range, 0 ~ 4095 
-
+#ifdef _DEBUG_GIMBALMSG
                     printf ("Stat: %d   Pos: %l\n", usStat, ulPos);
+#endif
                 }
             }
             break;
         }
         default:
         {
+#ifdef _DEBUG_GIMBALMSG
             printf("--get unhandeld request\n");
             printf("--0x%04X\n", *(uint16_t*)&cmd_key[0]);
             for (unsigned ui = 0; ui < data.size(); ui++)   // print dump data to console
                 printf ("%02u 0x%02X\n", ui, (uint8_t)data[ui]);
-
+#endif
             break;
         }
         }
