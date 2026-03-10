@@ -37,8 +37,11 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
     int recv_id = 0x222;    // CAN Rx No. for PC side
     std::string stCANBoxType = "GC_USBCAN";
 
-    // Connect to DJIR gimbal
-    _can_conn = new CANConnection(send_id, recv_id, stCANBoxType, USBCAN_SDK::TunnelType::USBCAN_II_TYPE, 0, 0);
+    // Connect to DJIR gimbal.
+    // iDevIndex / iCanIndex 透传至 CANConnection(tunnel_id, can_index)。
+    // 原实现硬编码为 (0, 0)；CANConnection 默认 can_index=1，此处修改为透传调用方参数。
+    // WARNING: 非默认设备/通道路径未经实机验证，行为存在不确定性。
+    _can_conn = new CANConnection(send_id, recv_id, stCANBoxType, USBCAN_SDK::TunnelType::USBCAN_II_TYPE, iDevIndex, iCanIndex);
     _pack_thread = new DataHandle(_can_conn);
     ((DataHandle*)_pack_thread)->start();
 
@@ -380,6 +383,36 @@ bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (int16_t iX, int16_t iY)
     {
         return true;
     }
+    else
+        return false;
+}
+
+bool DJIR_SDK::DJIRonin::set_angle_limits(
+    uint8_t pitch_max, uint8_t pitch_min,
+    uint8_t yaw_max,   uint8_t yaw_min,
+    uint8_t roll_max,  uint8_t roll_min)
+{
+    uint8_t cmd_type = 0x01;    // response preferred but not mandatory
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x03;    // set angle limits (2.3.4.4)
+
+    std::vector<uint8_t> data_payload =
+    {
+        0x01,       // ctrl_byte: set angle limits
+        pitch_max,
+        pitch_min,
+        yaw_max,
+        yaw_min,
+        roll_max,
+        roll_min
+    };
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    if (ret > 0)
+        return true;
     else
         return false;
 }

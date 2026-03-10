@@ -135,6 +135,23 @@ public:
     /// @return 
     bool recenter (void);
 
+    /**
+     * @brief           set_angle_limits - Set Gimbal Angle Limits (p.7, 2.3.4.4)
+     * @details         Sets the maximum angular deflection for each axis.
+     *                  Values are absolute magnitudes in whole degrees.
+     *                  Device stores limits persistently.
+     * @param pitch_max Max upward pitch angle,   range: 0 ~ 145 (degrees)
+     * @param pitch_min Max downward pitch angle, range: 0 ~ 55  (degrees)
+     * @param yaw_max   Max rightward yaw angle,  range: 0 ~ 179 (degrees)
+     * @param yaw_min   Max leftward yaw angle,   range: 0 ~ 179 (degrees)
+     * @param roll_max  Max positive roll angle,  range: 0 ~ 30  (degrees)
+     * @param roll_min  Max negative roll angle,  range: 0 ~ 30  (degrees)
+     * @return          True if send success
+     */
+    bool set_angle_limits(uint8_t pitch_max, uint8_t pitch_min,
+                          uint8_t yaw_max,   uint8_t yaw_min,
+                          uint8_t roll_max,  uint8_t roll_min);
+
 
     /// @brief      Push joystick position to gimbal to controll movement.
     ///             Expected to be called with an interval, or it exaust the system.
