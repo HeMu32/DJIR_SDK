@@ -14,5 +14,6 @@
 out/
 
 CMakeSettings.json
+@Docs/
 
 *.psd
