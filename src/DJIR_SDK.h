@@ -50,23 +50,48 @@ public:
     ~DJIRonin();
 
     /**
-     * @brief               connect - Connect to DJI Ronin device
+     * @brief connect - Connect to DJI Ronin device
      * @param iDevIndex     Index of CAN box device on this PC system, starting from 0
      * @param iCanIndex     Index of CAN channel on the CAN device, strating from 0
      * @return              True if success
      */
     bool connect(int iDevIndex, int iCanIndex);
+
     /**
-     * @brief disconnect - Disconnect from DJI Ronin device
-     * @return True if success
+     * @brief   disconnect - Disconnect from DJI Ronin device.
+     *          Stops the DataHandle thread (join), then destructs the CAN connection.
+     *          Safe to call multiple times (idempotent after first call).
+     * @return  True if success
      */
     bool disconnect();
 
+    /**
+     * @brief   enable_push - Send 0x07 to enable parameter push (CmdSet=0x0E CmdID=0x07).
+     *          Device will start pushing 0x08 frames at configured frequency.
+     * @return  True if send succeeded
+     */
+    bool enable_push();
 
-    /// @brief  Request the device to response with device version
-    /// @param  
-    /// @return 
-    bool request_device_version (void);
+    /// @brief  Request the device to response with device version (CmdSet=0x0E CmdID=0x09)
+    bool request_device_version(void);
+
+    /**
+     * @brief   set_push_callback - Register callback for 0x08 parameter push data.
+     * @param   callback(nCtrlByte, nYawAtt, nRollAtt, nPitchAtt, nYawJnt, nRollJnt, nPitchJnt)
+     * @return  True if DataHandle is available and callback was set
+     */
+    bool set_push_callback(std::function<void(
+        uint8_t  nCtrlByte,
+        int16_t  nYawAtt,  int16_t nRollAtt,  int16_t nPitchAtt,
+        int16_t  nYawJnt,  int16_t nRollJnt,  int16_t nPitchJnt)> callback);
+
+    /**
+     * @brief   set_device_version_callback - Register callback for 0x09 version info.
+     * @param   callback(nDeviceId, nVersion)
+     * @return  True if DataHandle is available and callback was set
+     */
+    bool set_device_version_callback(
+        std::function<void(uint32_t nDeviceId, uint32_t nVersion)> callback);
 
     /**
      * @brief           move_to - Handheld Gimbal Position Control (p.5, 2.3.4.1)
@@ -184,17 +209,13 @@ public:
 
 
     /// @brief  Command the gimbal to start focus motor auto calibration for limitation
-    /// @param  
     /// @return True if success
-    bool start_focus_motor_auto_cal (void);
+    bool start_focus_motor_auto_cal(void);
 
-
-    
-    // 在 DJIRonin 类的公共方法部分添加
     /**
-     * @brief 设置位置更新回调函数
-     * @param callback 回调函数
-     * @return 是否成功设置
+     * @brief   set_position_update_callback - Register callback for 0x02 position response.
+     * @param   callback(yaw, roll, pitch) in 0.1°
+     * @return  True if DataHandle is available
      */
     bool set_position_update_callback(std::function<void(int16_t, int16_t, int16_t)> callback);
 

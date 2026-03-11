@@ -13,6 +13,20 @@ DJIR_SDK::DataHandle::DataHandle(void *can_connection)
     _rsps = std::vector<std::string>();
 }
 
+DJIR_SDK::DataHandle::~DataHandle()
+{
+    // stop() 应在 delete 之前由调用方显式调用（join 工作线程）。
+    // 若仍在运行则强制停止，防止析构时线程仍访问 this 成员造成 UB。
+    if (!_stopped)
+    {
+        _stopped = true;
+        if (_thread.joinable())
+        {
+            _thread.join();
+        }
+    }
+}
+
 void DJIR_SDK::DataHandle::start()
 {
     _thread = std::thread(&DataHandle::run, this);
@@ -185,13 +199,29 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             break;
         }
         case 0x090E:
-        {   // Version info
-            uint32_t device_id  = ((uint8_t)data[15]) + ((uint8_t)data[16] << 8)
-                        + ((uint8_t)data[17] << 16)  + ((uint8_t)data[18] << 24);
-            uint8_t  device_ver = ((uint8_t)data[19]) + ((uint8_t)data[20] << 8)
-                        + ((uint8_t)data[21] << 16)  + ((uint8_t)data[22] << 24);
-            
-            // handle data here
+        {   // 设备版本号（响应帧 or 设备主动推送 1Hz，协议 2.3.4.10）
+            // 应答帧  (cmd_type==0x20): data[14]=return_code, data[15..18]=device_id, data[19..22]=version
+            // 推送帧  (cmd_type==0x03): data[14..17]=device_id, data[18..21]=version
+            uint32_t nDeviceId = 0;
+            uint32_t nVersion  = 0;
+            if (cmd_type == 0x20)
+            {
+                if (data.size() >= 27)
+                {
+                    nDeviceId = *reinterpret_cast<const uint32_t*>(&data[15]);
+                    nVersion  = *reinterpret_cast<const uint32_t*>(&data[19]);
+                }
+            }
+            else
+            {
+                if (data.size() >= 26)
+                {
+                    nDeviceId = *reinterpret_cast<const uint32_t*>(&data[14]);
+                    nVersion  = *reinterpret_cast<const uint32_t*>(&data[18]);
+                }
+            }
+            if (_device_version_callback && (nDeviceId != 0 || nVersion != 0))
+                _device_version_callback(nDeviceId, nVersion);
             break;
         }
         
@@ -223,10 +253,36 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
             break;
         }
         case 0x080E:
-        {   // Param push 
+        {   // 手持云台参数推送（CmdSet=0x0E CmdID=0x08，协议 2.3.4.9）
+            // 数据布局（相对 data[14]）:
+            //   +0  : ctrl_byte  (uint8_t)
+            //   +1  : yaw_attitude    (int16_t LE)
+            //   +3  : roll_attitude   (int16_t LE)
+            //   +5  : pitch_attitude  (int16_t LE)
+            //   +7  : yaw_joint       (int16_t LE)
+            //   +9  : roll_joint      (int16_t LE)
+            //   +11 : pitch_joint     (int16_t LE)
+            // 最小有效长度 = 14（头）+ 1（ctrl）+ 12（6×int16）+ 4（CRC）= 31
+            if (data.size() >= 31)
+            {
+                TPushData push;
+                push.ctrl_byte      = static_cast<uint8_t>(data[14]);
+                push.bAnglesValid   = (push.ctrl_byte & 0x01) != 0;
+                push.nYawAttitude   = *reinterpret_cast<const int16_t*>(&data[15]);
+                push.nRollAttitude  = *reinterpret_cast<const int16_t*>(&data[17]);
+                push.nPitchAttitude = *reinterpret_cast<const int16_t*>(&data[19]);
+                push.nYawJoint      = *reinterpret_cast<const int16_t*>(&data[21]);
+                push.nRollJoint     = *reinterpret_cast<const int16_t*>(&data[23]);
+                push.nPitchJoint    = *reinterpret_cast<const int16_t*>(&data[25]);
 #ifdef _DEBUG_GIMBALMSG
-            printf ("get param push\n");
+                printf("0x08 push: ctrl=0x%02X, att=[%d,%d,%d], jnt=[%d,%d,%d]\n",
+                    push.ctrl_byte,
+                    push.nYawAttitude, push.nRollAttitude, push.nPitchAttitude,
+                    push.nYawJoint,    push.nRollJoint,    push.nPitchJoint);
 #endif
+                if (_push_data_callback)
+                    _push_data_callback(push);
+            }
             break;
         }
         case 0x0E0E:
@@ -303,8 +359,17 @@ bool DJIR_SDK::DataHandle::_check_pack_crc(std::vector<uint8_t> data)
 }
 
 
-// 添加在适当位置，例如在 DataHandle 构造函数之后
 void DJIR_SDK::DataHandle::set_position_update_callback(PositionUpdateCallback callback)
 {
     _position_update_callback = callback;
+}
+
+void DJIR_SDK::DataHandle::set_push_callback(PushDataCallback callback)
+{
+    _push_data_callback = callback;
+}
+
+void DJIR_SDK::DataHandle::set_device_version_callback(DeviceVersionCallback callback)
+{
+    _device_version_callback = callback;
 }

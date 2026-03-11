@@ -18,6 +18,8 @@ enum FLAG : uint8_t {
 
 DJIR_SDK::DJIRonin::DJIRonin()
 {
+    _can_conn   = nullptr;  // must be nullptr before first connect()
+    _pack_thread = nullptr; // must be nullptr before first connect()
     _position_ctrl_byte = 0;
     _speed_ctrl_byte  = 0;
 
@@ -28,7 +30,15 @@ DJIR_SDK::DJIRonin::DJIRonin()
 
 DJIR_SDK::DJIRonin::~DJIRonin()
 {
-    ((CANConnection*)_can_conn)->~CANConnection();
+    // disconnect() is idempotent and null-safe; handles DataHandle stop + CAN teardown.
+    // Do NOT call ~CANConnection() directly here — disconnect() already does it,
+    // and calling it again on a nullptr (after disconnect) would crash.
+    disconnect();
+    if (_cmd_cmb)
+    {
+        delete (CmdCombine*)_cmd_cmb;
+        _cmd_cmb = nullptr;
+    }
 }
 
 bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
@@ -45,13 +55,75 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
     _pack_thread = new DataHandle(_can_conn);
     ((DataHandle*)_pack_thread)->start();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // FRAGILE: 此处硬编码等待是为了让 DataHandle 线程及 CAN 驱动完成内部初始化。
+    // 原值 500ms，已降低至 100ms；较短的等待与上层握手逻辑并不互斥，两者可共存。
+    // 仍存在在低速主机或驱动响应慢时提前返回的风险，但上层握手会捕获此类情况。
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     return ((CANConnection*)_can_conn)->get_connection_status();
 }
 
 bool DJIR_SDK::DJIRonin::disconnect()
 {
-    ((CANConnection*)_can_conn)->~CANConnection();
+    // 先停止 DataHandle 线程（设 _stopped=true 并 join），再关闭 CAN 连接，
+    // 避免 CAN 关闭后 DataHandle 仍在访问已释放资源。
+    // DataHandle::run() 每次循环最多睡眠 100ms，join 最迟在此之内完成。
+    if (_pack_thread)
+    {
+        ((DataHandle*)_pack_thread)->stop();
+        delete (DataHandle*)_pack_thread;
+        _pack_thread = nullptr;
+    }
+    if (_can_conn)
+    {
+        // 原设计：调用显式析构而非 delete（与 new CANConnection() 搭配属非标准用法，保持原行为）。
+        // 置 nullptr 防止重复析构。
+        ((CANConnection*)_can_conn)->~CANConnection();
+        _can_conn = nullptr;
+    }
+    return true;
+}
+
+bool DJIR_SDK::DJIRonin::enable_push()
+{
+    if (!_pack_thread || !_can_conn)
+        return false;
+
+    // 协议 2.3.4.8：CmdSet=0x0E CmdID=0x07，ctrl_byte=0x01 使能参数推送
+    uint8_t cmd_type = 0x03;  // fire-and-forget（与官方示例软件一致）
+    uint8_t cmd_set  = 0x0E;
+    uint8_t cmd_id   = 0x07;
+
+    std::vector<uint8_t> data_payload = { 0x01 };  // 0x01 = enable push
+
+    auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
+    ((DataHandle*)_pack_thread)->add_cmd(cmd);
+    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    return ret > 0;
+}
+
+bool DJIR_SDK::DJIRonin::set_push_callback(
+    std::function<void(uint8_t, int16_t, int16_t, int16_t, int16_t, int16_t, int16_t)> callback)
+{
+    if (!_pack_thread)
+        return false;
+
+    // 将扁平参数签名适配为 Handle 内部的 TPushData 回调
+    ((DataHandle*)_pack_thread)->set_push_callback(
+        [callback](const DJIR_SDK::TPushData& push)
+        {
+            callback(push.ctrl_byte,
+                     push.nYawAttitude,  push.nRollAttitude,  push.nPitchAttitude,
+                     push.nYawJoint,     push.nRollJoint,     push.nPitchJoint);
+        });
+    return true;
+}
+
+bool DJIR_SDK::DJIRonin::set_device_version_callback(
+    std::function<void(uint32_t, uint32_t)> callback)
+{
+    if (!_pack_thread)
+        return false;
+    ((DataHandle*)_pack_thread)->set_device_version_callback(callback);
     return true;
 }
 
