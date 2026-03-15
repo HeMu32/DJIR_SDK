@@ -35,7 +35,10 @@ void DJIR_SDK::DataHandle::start()
 void DJIR_SDK::DataHandle::stop()
 {
     _stopped = true;
-    _thread.join();
+    if (_thread.joinable())
+    {
+        _thread.join();
+    }
 }
 
 void DJIR_SDK::DataHandle::add_cmd(std::vector<uint8_t> cmd)
@@ -82,6 +85,10 @@ void DJIR_SDK::DataHandle::run()
     std::string canid_raw_str = "";
     std::string canid_str = "";
     USBCAN_SDK::CANConnection* dev = (USBCAN_SDK::CANConnection*)_dev;
+    /// @todo   temp. fix, unable to resolve problem, 
+    //          may need further invesigation
+    bool bFirstLoop = true;
+
     while (!_stopped)
     {
         auto frame = dev->get_tunnel()->pop_data_from_recv_queue();
@@ -137,7 +144,14 @@ void DJIR_SDK::DataHandle::run()
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Originally 100ms for all cases; unable to solve
+        if (bFirstLoop)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            bFirstLoop = false;
+        }
+        else
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 }
 

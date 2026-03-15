@@ -47,6 +47,9 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
     int recv_id = 0x222;    // CAN Rx No. for PC side
     std::string stCANBoxType = "GC_USBCAN";
 
+    // reconnect 前先清理旧会话，避免失败重试路径叠加残留线程/句柄。
+    disconnect();
+
     // Connect to DJIR gimbal.
     // iDevIndex / iCanIndex 透传至 CANConnection(tunnel_id, can_index)。
     // 原实现硬编码为 (0, 0)；CANConnection 默认 can_index=1，此处修改为透传调用方参数。
@@ -56,9 +59,9 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
     ((DataHandle*)_pack_thread)->start();
 
     // FRAGILE: 此处硬编码等待是为了让 DataHandle 线程及 CAN 驱动完成内部初始化。
-    // 原值 500ms，已降低至 100ms；较短的等待与上层握手逻辑并不互斥，两者可共存。
+    // 原值 500ms，已降低至 1000ms；较短的等待与上层握手逻辑并不互斥，两者可共存。
     // 仍存在在低速主机或驱动响应慢时提前返回的风险，但上层握手会捕获此类情况。
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     return ((CANConnection*)_can_conn)->get_connection_status();
 }
 
@@ -75,9 +78,7 @@ bool DJIR_SDK::DJIRonin::disconnect()
     }
     if (_can_conn)
     {
-        // 原设计：调用显式析构而非 delete（与 new CANConnection() 搭配属非标准用法，保持原行为）。
-        // 置 nullptr 防止重复析构。
-        ((CANConnection*)_can_conn)->~CANConnection();
+        delete (CANConnection*)_can_conn;
         _can_conn = nullptr;
     }
     return true;

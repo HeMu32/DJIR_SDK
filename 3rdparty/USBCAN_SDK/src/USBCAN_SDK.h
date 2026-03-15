@@ -11,9 +11,11 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <atomic>
+#include <mutex>
 
-
-#define RECV_THREAD_SLEEP_PERIOD 25
+// Originally 25
+#define RECV_THREAD_SLEEP_PERIOD 5
 
 #if (defined _WIN32 && defined RF62X_LIBRARY)
 #define API_EXPORT __declspec(dllexport)
@@ -102,6 +104,7 @@ protected:
 
 
     std::queue<std::vector<uint8_t>> _recv_queue_handle;
+    std::mutex _mtx_recv_queue;
 
 
     bool _is_running;
@@ -163,7 +166,7 @@ public:
 private:
     void run();
     std::thread _thread;
-    bool _stopped = false;
+    std::atomic<bool> _stopped {false};
     CanTunnel* _dev;
 };
 

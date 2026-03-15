@@ -39,7 +39,17 @@ CanDev::CanDev(
 
 CanDev::~CanDev (void)
 {
-    CloseDevice (_dev_type, _can_index);
+    if (_tunnel)
+    {
+        delete _tunnel;
+        _tunnel = nullptr;
+    }
+
+    if (_is_open)
+    {
+        CloseDevice(_dev_type, _dev_index);
+        _is_open = false;
+    }
 }
 
 USBCAN_II* CanDev::get_can_dev(int dev_type, int can_index)
@@ -79,7 +89,14 @@ bool CanDev::is_open()
 Status CanDev::close()
 {
     if (_is_open)
-        return (Status)CloseDevice(_dev_type, _dev_index);
+    {
+        const Status eRet = (Status)CloseDevice(_dev_type, _dev_index);
+        if (eRet == Status::OK)
+        {
+            _is_open = false;
+        }
+        return eRet;
+    }
     else
         return Status::ERR;
 }
@@ -98,6 +115,11 @@ CanTunnel::CanTunnel(void *can_dev, int can_index)
     _recv_queue_handle = std::queue<std::vector<uint8_t>>();
     _recv_id_list = std::vector<uint32_t>();
 
+}
+
+CanTunnel::~CanTunnel()
+{
+    _is_running = false;
 }
 
 Status CanTunnel::init_can()
@@ -237,7 +259,12 @@ int CanTunnel::send_data(int can_id, std::vector<uint8_t> data)
         if (send_len == frame_num)
             return send_len;
         else
+        {
+            // Attempt to retrieve CAN error info when transmission fails.
+            int err_code = read_err_info();
+            printf("[USBCAN] send_data failed: send_len=%d expected=%d err=0x%04X\n", send_len, frame_num, err_code);
             return 0;
+        }
     }else
         return 0;
 
@@ -258,11 +285,13 @@ int CanTunnel::read_err_info()
 
 void CanTunnel::push_data_to_recv_queue(std::vector<uint8_t> data)
 {
+    std::lock_guard<std::mutex> lk(_mtx_recv_queue);
     _recv_queue_handle.push(data);
 }
 
 std::vector<uint8_t> CanTunnel::pop_data_from_recv_queue()
 {
+    std::lock_guard<std::mutex> lk(_mtx_recv_queue);
     if (!_recv_queue_handle.empty())
     {
         std::vector<uint8_t> ret = _recv_queue_handle.front();
@@ -324,6 +353,14 @@ RecvCanData::RecvCanData(CanTunnel *can_tunnel)
     _dev = can_tunnel;
 }
 
+RecvCanData::~RecvCanData()
+{
+    if (!_stopped)
+    {
+        stop();
+    }
+}
+
 void RecvCanData::start()
 {
     _thread = std::thread(&RecvCanData::run, this);
@@ -347,7 +384,10 @@ void RecvCanData::run()
 void RecvCanData::stop()
 {
     _stopped = true;
-    _thread.join();
+    if (_thread.joinable())
+    {
+        _thread.join();
+    }
 }
 
 
@@ -360,6 +400,7 @@ CANConnection::CANConnection(
         int         can_index)
 {
     _is_connected   = false;
+    _recv_thread    = nullptr;
     _device         = new CanDev(can_name, tunnel_type, tunnel_id, can_index);
     _tunnel         = _device->get_tunnel();
 
@@ -393,7 +434,23 @@ CANConnection::CANConnection(
 
 CANConnection::~CANConnection (void)
 {
-    _device->~CanDev();
+    _stopped = true;
+
+    if (_recv_thread)
+    {
+        _recv_thread->stop();
+        delete _recv_thread;
+        _recv_thread = nullptr;
+    }
+
+    if (_device)
+    {
+        delete _device;
+        _device = nullptr;
+    }
+
+    _tunnel = nullptr;
+    _is_connected = false;
 }
 
 bool CANConnection::get_connection_status()
