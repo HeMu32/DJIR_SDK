@@ -16,6 +16,9 @@
 #define API_EXPORT
 #endif
 
+#define _DJIR_PKT_QUERY_INTERVAL_MS 5
+#define _DJIR_PKT_QUERY_FIRST_LOOP_MS 100
+
 namespace DJIR_SDK {
 
 /// @brief 位置更新回调：来自 0x02 响应（姿态角，单位 0.1°）

@@ -44,6 +44,10 @@ public:
      * @return True if success
      */
     bool connect();
+
+    // 2026-03-20 批注：此处示例签名属于旧版 README 内容保留。
+    // 当前真实接口已要求显式传入设备/通道索引：connect(int iDevIndex, int iCanIndex)。
+
     /**
      * @brief disconnect - Disconnect from DJI Ronin device
      * @return True if success

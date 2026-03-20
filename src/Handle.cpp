@@ -147,11 +147,11 @@ void DJIR_SDK::DataHandle::run()
         // Originally 100ms for all cases; unable to solve
         if (bFirstLoop)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(_DJIR_PKT_QUERY_FIRST_LOOP_MS));
             bFirstLoop = false;
         }
         else
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            std::this_thread::sleep_for(std::chrono::milliseconds(_DJIR_PKT_QUERY_INTERVAL_MS));
     }
 }
 

@@ -16,6 +16,11 @@ enum FLAG : uint8_t {
     BIT7 = 0x40
 };
 
+namespace
+{
+constexpr uint16_t kGetCurrentPositionTimeoutMs = 500;
+}
+
 DJIR_SDK::DJIRonin::DJIRonin()
 {
     _can_conn   = nullptr;  // must be nullptr before first connect()
@@ -288,7 +293,7 @@ bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16
     int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
     if (ret > 0)
     {
-        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, 50);;      ////////////////////////////////////////////
+        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, kGetCurrentPositionTimeoutMs);
     }
     else
         return false;
