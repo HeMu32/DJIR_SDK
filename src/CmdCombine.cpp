@@ -87,13 +87,27 @@ std::vector<uint8_t> DJIR_SDK::CmdCombine::combine(uint8_t cmd_type, uint8_t cmd
 
 std::vector<uint8_t> DJIR_SDK::CmdCombine::seq_num()
 {
-    static uint16_t Seq_Init_Data = 0x2210;
-    if (Seq_Init_Data >= 0xFFFD)
-        Seq_Init_Data = 0x0002;
-    Seq_Init_Data += 1;
+    std::uint16_t uiExpected = 0;
+    std::uint16_t uiNext = 0;
+    for (;;)
+    {
+        uiExpected = m_uiSeqNum.load(std::memory_order_relaxed);
+        uiNext = (uiExpected >= 0xFFFD)
+            ? static_cast<std::uint16_t>(0x0003)
+            : static_cast<std::uint16_t>(uiExpected + 1);
+
+        if (m_uiSeqNum.compare_exchange_weak(
+                uiExpected,
+                uiNext,
+                std::memory_order_relaxed,
+                std::memory_order_relaxed))
+        {
+            break;
+        }
+    }
 
     std::vector<uint8_t> ret = std::vector<uint8_t>();
-    uint8_t* seq = (uint8_t*)&Seq_Init_Data;
+    uint8_t* seq = reinterpret_cast<uint8_t*>(&uiNext);
     ret.push_back(seq[1]);
     ret.push_back(seq[0]);
     return ret;

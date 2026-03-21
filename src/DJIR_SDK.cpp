@@ -323,16 +323,7 @@ bool DJIR_SDK::DJIRonin::recenter (void)
     };
     
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
-    
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
@@ -354,15 +345,7 @@ bool DJIR_SDK::DJIRonin::set_focus_motor_pos (uint16_t uiPos)
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::get_focus_motor_pos (void)
@@ -378,15 +361,7 @@ bool DJIR_SDK::DJIRonin::get_focus_motor_pos (void)
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
@@ -404,15 +379,7 @@ bool DJIR_SDK::DJIRonin::start_focus_motor_auto_cal (void)
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (int16_t iX, int16_t iY)
@@ -442,15 +409,7 @@ bool DJIR_SDK::DJIRonin::push_joystick_pos_movement (int16_t iX, int16_t iY)
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, false);
 }
 
 bool DJIR_SDK::DJIRonin::set_angle_limits(
@@ -474,13 +433,7 @@ bool DJIR_SDK::DJIRonin::set_angle_limits(
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-        return true;
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 // 实现 set_position_update_callback 方法

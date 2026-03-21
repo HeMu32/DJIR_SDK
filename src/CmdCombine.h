@@ -2,6 +2,8 @@
 #define CMD_COMBINE_H
 
 #include <stdlib.h>
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <iostream>
 #include <vector>
@@ -26,6 +28,9 @@ public:
 
 private:
     std::vector<uint8_t> seq_num();
+
+private:
+    std::atomic<std::uint16_t> m_uiSeqNum {0x2210};
 
 };
 
