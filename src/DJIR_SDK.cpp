@@ -19,6 +19,27 @@ enum FLAG : uint8_t {
 namespace
 {
 constexpr uint16_t kGetCurrentPositionTimeoutMs = 500;
+
+bool EnqueueAndSendCmd(
+    void* pPackThread,
+    void* pCanConn,
+    const std::vector<uint8_t>& cmd,
+    bool bTrackResponse)
+{
+    if (pPackThread == nullptr || pCanConn == nullptr)
+    {
+        return false;
+    }
+
+    DJIR_SDK::DataHandle* pHandle = static_cast<DJIR_SDK::DataHandle*>(pPackThread);
+    CANConnection* pConn = static_cast<CANConnection*>(pCanConn);
+    if (bTrackResponse)
+    {
+        pHandle->add_cmd(cmd);
+    }
+
+    return pConn->send_cmd(cmd) > 0;
+}
 }
 
 DJIR_SDK::DJIRonin::DJIRonin()
@@ -102,9 +123,7 @@ bool DJIR_SDK::DJIRonin::enable_push()
     std::vector<uint8_t> data_payload = { 0x01 };  // 0x01 = enable push
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    return ret > 0;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::set_push_callback(
@@ -148,15 +167,7 @@ bool DJIR_SDK::DJIRonin::request_device_version (void)
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 
 }
 
@@ -176,12 +187,7 @@ bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint1
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-        return true;
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::set_inverted_axis(DJIR_SDK::AxisType axis, bool invert)
@@ -249,15 +255,7 @@ bool DJIR_SDK::DJIRonin::set_speed(uint16_t yaw, uint16_t roll, uint16_t pitch)
         _speed_ctrl_byte
     };
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::set_speed_mode(DJIR_SDK::SpeedControl speed_type, DJIR_SDK::FocalControl focal_type)
@@ -288,10 +286,8 @@ bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16
         0x01
     };
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
+    const bool bSent = EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
+    if (bSent)
     {
         return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, kGetCurrentPositionTimeoutMs);
     }
@@ -311,15 +307,7 @@ bool DJIR_SDK::DJIRonin::query_current_position()
     };
 
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
-    ((DataHandle*)_pack_thread)->add_cmd(cmd);
-
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
-    if (ret > 0)
-    {
-        return true;
-    }
-    else
-        return false;
+    return EnqueueAndSendCmd(_pack_thread, _can_conn, cmd, true);
 }
 
 bool DJIR_SDK::DJIRonin::recenter (void)

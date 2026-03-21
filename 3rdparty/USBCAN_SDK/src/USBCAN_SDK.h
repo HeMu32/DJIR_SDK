@@ -5,7 +5,6 @@
 #include <string.h>
 #include <vector>
 #include <queue>
-#include <map>
 
 #include <windows.h>
 #include <iostream>
@@ -84,13 +83,14 @@ public:
     int send_data(int can_id, std::vector<uint8_t> data);
     int read_err_info();
 
+    /// @brief Thread-safe enqueue for received CAN payload chunks.
+    ///        This is now the only supported receive handoff path.
     void push_data_to_recv_queue(std::vector<uint8_t> data);
-    std::vector<uint8_t> pop_data_from_recv_queue();
 
-    std::map<std::string, std::string> recv_filter;
-    std::map<std::string, std::string> recv_queue;
-    std::map<std::string, int> recv_queue_canid;
-    std::map<std::string, int> recv_num;
+    /// @brief Thread-safe dequeue for received CAN payload chunks.
+    ///        Older recv_queue/pop_recv_cmd-style APIs were removed to keep a
+    ///        single receive model.
+    std::vector<uint8_t> pop_data_from_recv_queue();
 
 protected:
     void* _dev;
@@ -103,11 +103,13 @@ protected:
 
 
 
+    /// @brief Sole receive queue shared between RecvCanData and higher-level parsers.
     std::queue<std::vector<uint8_t>> _recv_queue_handle;
     std::mutex _mtx_recv_queue;
 
 
-    bool _is_running;
+    /// @brief Mirrors whether StartCAN succeeded and the tunnel is allowed to send/receive.
+    std::atomic<bool> _is_running {false};
 
     std::vector<uint32_t> _recv_id_list;
 
@@ -194,8 +196,8 @@ public:
     bool get_connection_status();
 
     void set_send_id(int send_id);
-    std::vector<std::string> pop_recv_cmd(std::string key);
-    std::vector<std::string> get_recv_cmd(std::string key);
+
+    /// @brief Send one protocol command through the currently bound CAN tunnel.
     int send_cmd(std::vector<uint8_t> cmd);
 
     USBCAN_SDK::CanTunnel* get_tunnel();
@@ -210,7 +212,9 @@ private:
     USBCAN_SDK::CanTunnel* _tunnel;
     void* _pack_thread;
     int _send_id;
-    bool _stopped;
+    /// @brief Reserved connection-level stop flag. Kept atomic so shutdown state
+    ///        stays race-free even if future logic uses it more actively.
+    std::atomic<bool> _stopped {false};
 
     USBCAN_SDK::RecvCanData* _recv_thread;
 };

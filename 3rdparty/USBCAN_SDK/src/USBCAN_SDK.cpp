@@ -6,6 +6,8 @@
 #include "ECanVci.h"
 #endif
 
+#include <cstdlib>
+
 using namespace USBCAN_SDK;
 
 CanDev::CanDev(
@@ -111,6 +113,7 @@ CanTunnel::CanTunnel(void *can_dev, int can_index)
 
     _read_content = std::vector<uint8_t>();
 
+    // The actual running state flips to true only after StartCAN succeeds.
     _is_running = false;
     _recv_queue_handle = std::queue<std::vector<uint8_t>>();
     _recv_id_list = std::vector<uint32_t>();
@@ -119,6 +122,8 @@ CanTunnel::CanTunnel(void *can_dev, int can_index)
 
 CanTunnel::~CanTunnel()
 {
+    // Thread ownership lives in RecvCanData/CANConnection, not in the tunnel.
+    // The tunnel only marks itself unavailable for send/receive here.
     _is_running = false;
 }
 
@@ -224,37 +229,43 @@ int CanTunnel::send_data(int can_id, std::vector<uint8_t> data)
         else
             frame_num = full_frame_num + 1;
 
-        CAN_OBJ* send_buf = new CAN_OBJ[frame_num]();
+        if (frame_num <= 0)
+        {
+            return 0;
+        }
+
+        // Keep send buffer on the stack-owned vector to avoid the old new[] leak.
+        std::vector<CAN_OBJ> vecSendBuf(static_cast<std::size_t>(frame_num));
 
         int data_offset = 0;
         for (int i = 0; i < (int)(full_frame_num); i++)
         {
-            send_buf[i].ID = can_id;
-            send_buf[i].SendType = (uint8_t)SendType::NORMAL_SEND;
-            send_buf[i].RemoteFlag = (uint8_t)RemoteFlag::DATA_FRAME;
-            send_buf[i].ExternFlag = (uint8_t)ExternFlag::STD_FRAME;
-            send_buf[i].DataLen = FRAME_LEN;
+            vecSendBuf[static_cast<std::size_t>(i)].ID = can_id;
+            vecSendBuf[static_cast<std::size_t>(i)].SendType = (uint8_t)SendType::NORMAL_SEND;
+            vecSendBuf[static_cast<std::size_t>(i)].RemoteFlag = (uint8_t)RemoteFlag::DATA_FRAME;
+            vecSendBuf[static_cast<std::size_t>(i)].ExternFlag = (uint8_t)ExternFlag::STD_FRAME;
+            vecSendBuf[static_cast<std::size_t>(i)].DataLen = FRAME_LEN;
 
             for (int j = 0; j < FRAME_LEN; j++)
             {
-                send_buf[i].Data[j] = data[data_offset+j];
+                vecSendBuf[static_cast<std::size_t>(i)].Data[j] = data[data_offset+j];
             }
             data_offset +=FRAME_LEN;
         }
 
         if (left_len > 0)
         {
-            send_buf[frame_num - 1].ID = can_id;
-            send_buf[frame_num - 1].SendType = (uint8_t)SendType::NORMAL_SEND;
-            send_buf[frame_num - 1].RemoteFlag = (uint8_t)RemoteFlag::DATA_FRAME;
-            send_buf[frame_num - 1].ExternFlag = (uint8_t)ExternFlag::STD_FRAME;
-            send_buf[frame_num - 1].DataLen = left_len;
+            vecSendBuf[static_cast<std::size_t>(frame_num - 1)].ID = can_id;
+            vecSendBuf[static_cast<std::size_t>(frame_num - 1)].SendType = (uint8_t)SendType::NORMAL_SEND;
+            vecSendBuf[static_cast<std::size_t>(frame_num - 1)].RemoteFlag = (uint8_t)RemoteFlag::DATA_FRAME;
+            vecSendBuf[static_cast<std::size_t>(frame_num - 1)].ExternFlag = (uint8_t)ExternFlag::STD_FRAME;
+            vecSendBuf[static_cast<std::size_t>(frame_num - 1)].DataLen = left_len;
 
             for (int j = 0; j < left_len; j++)
-                send_buf[frame_num - 1].Data[j] = data[data_offset+j];
+                vecSendBuf[static_cast<std::size_t>(frame_num - 1)].Data[j] = data[data_offset+j];
         }
 
-        int send_len = Transmit(_dev_type, _dev_index, _can_index, send_buf, frame_num);
+        int send_len = Transmit(_dev_type, _dev_index, _can_index, vecSendBuf.data(), frame_num);
 
         if (send_len == frame_num)
             return send_len;
@@ -272,10 +283,11 @@ int CanTunnel::send_data(int can_id, std::vector<uint8_t> data)
 
 int CanTunnel::read_err_info()
 {
-    ERR_INFO* err_info = new ERR_INFO();
-    Status ret = (Status)ReadErrInfo(_dev_type, _dev_index, _can_index, err_info);
+    // Keep this on the stack; the old heap allocation leaked on every failed send.
+    ERR_INFO err_info = {};
+    Status ret = (Status)ReadErrInfo(_dev_type, _dev_index, _can_index, &err_info);
     if (ret == Status::OK)
-        return err_info->ErrCode;
+        return err_info.ErrCode;
     else
     {
         //logger.info("can not get the err_code")
@@ -313,6 +325,9 @@ Status USBCAN_II::init_can()
 {
     INIT_CONFIG* init_config = (INIT_CONFIG*)get_init_cfg_by_id();
     int a = InitCAN(_dev_type, _dev_index, _can_index, init_config);
+    // get_init_cfg_by_id() still returns an owning heap block for the vendor API
+    // call shape, so we free it immediately after InitCAN returns.
+    std::free(init_config);
     Status status = (Status)a;
     return status;
 }
@@ -334,7 +349,7 @@ void* USBCAN_II::get_init_cfg_by_id()
     //normal mode
     uint8_t mode = 0;
 
-    INIT_CONFIG* init_config = (INIT_CONFIG*)calloc(1, sizeof (INIT_CONFIG));
+    INIT_CONFIG* init_config = static_cast<INIT_CONFIG*>(std::calloc(1, sizeof(INIT_CONFIG)));
     init_config->AccCode = ACR;
     init_config->AccMask = AMR;
     init_config->Reserved = reserved;
@@ -375,6 +390,8 @@ void RecvCanData::run()
         {
             std::vector<std::vector<uint8_t>> recv_data = _dev->recv_data(num);
             for(size_t i = 0; i < recv_data.size(); i++)
+                // Feed only the queue-based receive model; the old recv_queue map
+                // path has been removed on purpose.
                 ((CanTunnel*)_dev)->push_data_to_recv_queue(recv_data[i]);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(RECV_THREAD_SLEEP_PERIOD));
@@ -409,8 +426,6 @@ CANConnection::CANConnection(
     _tunnel->set_recv_id_list(id_list);
     set_send_id(send_id);
 
-    _stopped = false;
-
     Status ret = Status::ERR;
     ret = init_can();
     if (ret == Status::OK)
@@ -438,6 +453,7 @@ CANConnection::~CANConnection (void)
 
     if (_recv_thread)
     {
+        // Stop the receive thread before deleting device/tunnel resources.
         _recv_thread->stop();
         delete _recv_thread;
         _recv_thread = nullptr;
@@ -461,35 +477,6 @@ bool CANConnection::get_connection_status()
 void CANConnection::set_send_id(int send_id)
 {
     _send_id = send_id;
-}
-
-std::vector<std::string> CANConnection::pop_recv_cmd(std::string key)
-{
-    std::vector<std::string> recv_cmd = std::vector<std::string>();
-    for (auto itr = _tunnel->recv_queue.begin(); itr != _tunnel->recv_queue.end(); ++itr)
-    {
-        if (itr->first == key)
-        {
-            recv_cmd.push_back(itr->second);
-            _tunnel->recv_queue.erase(itr);
-        }
-    }
-
-    return recv_cmd;
-}
-
-std::vector<std::string> CANConnection::get_recv_cmd(std::string key)
-{
-    std::vector<std::string> recv_cmd = std::vector<std::string>();
-    for (auto itr = _tunnel->recv_queue.begin(); itr != _tunnel->recv_queue.end(); ++itr)
-    {
-        if (itr->first == key)
-        {
-            recv_cmd.push_back(itr->second);
-        }
-    }
-
-    return recv_cmd;
 }
 
 int CANConnection::send_cmd(std::vector<uint8_t> cmd)

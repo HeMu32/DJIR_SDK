@@ -4,37 +4,80 @@
 #include "custom_crc16.h"
 #include "custom_crc32.h"
 
-DJIR_SDK::DataHandle::DataHandle(void *can_connection)
+#include <cstring>
+
+namespace
 {
-    _stopped = false;
-    _input_position_ready_flag = false;
-    _dev = can_connection;
-    _cmd_list = std::vector<std::vector<uint8_t>>();
-    _rsps = std::vector<std::string>();
+
+// All protocol reads below intentionally use memcpy-based little-endian helpers
+// instead of pointer reinterpret casts. This avoids the old strict-aliasing and
+// unaligned-access UB that previously existed in packet parsing.
+uint16_t ReadLeU16(const std::vector<uint8_t>& data, std::size_t offset)
+{
+    if (offset + sizeof(uint16_t) > data.size())
+    {
+        return 0;
+    }
+
+    uint16_t value = 0;
+    std::memcpy(&value, data.data() + offset, sizeof(value));
+    return value;
 }
+
+uint32_t ReadLeU32(const std::vector<uint8_t>& data, std::size_t offset)
+{
+    if (offset + sizeof(uint32_t) > data.size())
+    {
+        return 0;
+    }
+
+    uint32_t value = 0;
+    std::memcpy(&value, data.data() + offset, sizeof(value));
+    return value;
+}
+
+int16_t ReadLeI16(const std::vector<uint8_t>& data, std::size_t offset)
+{
+    if (offset + sizeof(int16_t) > data.size())
+    {
+        return 0;
+    }
+
+    int16_t value = 0;
+    std::memcpy(&value, data.data() + offset, sizeof(value));
+    return value;
+}
+
+} // namespace
+
+DJIR_SDK::DataHandle::DataHandle(void *pCanConnection)
+    : _dev(pCanConnection)
+{}
 
 DJIR_SDK::DataHandle::~DataHandle()
 {
-    // stop() 应在 delete 之前由调用方显式调用（join 工作线程）。
-    // 若仍在运行则强制停止，防止析构时线程仍访问 this 成员造成 UB。
-    if (!_stopped)
-    {
-        _stopped = true;
-        if (_thread.joinable())
-        {
-            _thread.join();
-        }
-    }
+    // Destruction always funnels through stop() so the worker lifecycle stays
+    // identical whether shutdown is explicit or implicit.
+    stop();
 }
 
 void DJIR_SDK::DataHandle::start()
 {
+    if (_thread.joinable())
+    {
+        // The SDK currently assumes a single worker per DataHandle instance.
+        // Re-start while running is treated as a no-op instead of spawning a
+        // second parser thread over the same CAN stream.
+        return;
+    }
+
+    _stopped.store(false);
     _thread = std::thread(&DataHandle::run, this);
 }
 
 void DJIR_SDK::DataHandle::stop()
 {
-    _stopped = true;
+    _stopped.store(true);
     if (_thread.joinable())
     {
         _thread.join();
@@ -43,347 +86,322 @@ void DJIR_SDK::DataHandle::stop()
 
 void DJIR_SDK::DataHandle::add_cmd(std::vector<uint8_t> cmd)
 {
-    _rdcontent_lock.lock();
-    _cmd_list.push_back(cmd);
-    if (_cmd_list.size() > 10)
-        _cmd_list.erase(_cmd_list.begin());
-    _rdcontent_lock.unlock();
+    if (cmd.size() < 10)
+    {
+        // Too short to contain the protocol header CRC used for response matching.
+        return;
+    }
+
+    TPendingCmd stPending;
+    stPending.vCmd = std::move(cmd);
+    stPending.uiHeaderCrc = ReadLeU16(stPending.vCmd, 8);
+
+    std::lock_guard<std::mutex> lock(_rdcontent_lock);
+    _vecPendingCmds.push_back(std::move(stPending));
+    constexpr std::size_t kMaxPendingCmds = 32;
+    while (_vecPendingCmds.size() > kMaxPendingCmds)
+    {
+        // Keep pending state bounded. If responses are lost or mismatched we
+        // prefer dropping the oldest stale expectation over unbounded growth.
+        _vecPendingCmds.pop_front();
+    }
 }
 
 bool DJIR_SDK::DataHandle::get_position(int16_t &yaw, int16_t &roll, int16_t &pitch, uint16_t timeout_ms)
 {
-    // Wait data.
     std::unique_lock<std::mutex> lk(_input_position_mutex);
-    while (!_input_position_ready_flag)
-    {
-        if (_input_position_cond_var.wait_for(
-                    lk, std::chrono::milliseconds(timeout_ms)) == std::cv_status::timeout)
+    const bool bReady = _input_position_cond_var.wait_for(
+        lk,
+        std::chrono::milliseconds(timeout_ms),
+        [this]()
         {
-            // Reset data ready flag.
-            _input_position_ready_flag = false;
-            // Unlock mutex.
-            lk.unlock();
+            return _stPositionSample.bReady;
+        });
 
-            return false;
-        }
+    if (!bReady)
+    {
+        return false;
     }
-    lk.unlock();
 
-    // Reset data ready flag.
-    _input_position_ready_flag = false;
-    yaw = _yaw;
-    roll = _roll;
-    pitch = _pitch;
+    yaw = _stPositionSample.nYaw;
+    roll = _stPositionSample.nRoll;
+    pitch = _stPositionSample.nPitch;
+    _stPositionSample.bReady = false;
     return true;
 }
 
 void DJIR_SDK::DataHandle::run()
 {
-    std::vector<uint8_t> v1_pack_list = std::vector<uint8_t>();
-    size_t pack_len = 0;
+    std::vector<uint8_t> v1_pack_list;
+    std::size_t pack_len = 0;
     int step = 0;
-    std::string canid_raw_str = "";
-    std::string canid_str = "";
-    USBCAN_SDK::CANConnection* dev = (USBCAN_SDK::CANConnection*)_dev;
-    /// @todo   temp. fix, unable to resolve problem, 
-    //          may need further invesigation
+    USBCAN_SDK::CANConnection* pDev = static_cast<USBCAN_SDK::CANConnection*>(_dev);
     bool bFirstLoop = true;
 
-    while (!_stopped)
+    while (!_stopped.load())
     {
-        auto frame = dev->get_tunnel()->pop_data_from_recv_queue();
-        for (size_t i = 0; i < frame.size(); i++)
+        // USBCAN_SDK now exposes only the queue-based receive path. This keeps
+        // packet parsing on a single consumer path instead of the old queue/map
+        // split model.
+        auto frame = pDev->get_tunnel()->pop_data_from_recv_queue();
+        for (std::size_t i = 0; i < frame.size(); ++i)
         {
             if (step == 0)
             {
-                if((uint8_t)frame[i] == 0xAA)
+                if (frame[i] == 0xAA)
                 {
                     v1_pack_list.push_back(frame[i]);
                     step = 1;
                 }
-
-            }else if(step == 1)
+            }
+            else if (step == 1)
             {
-                pack_len = int(frame[i]);
+                pack_len = static_cast<std::size_t>(frame[i]);
                 v1_pack_list.push_back(frame[i]);
                 step = 2;
-            }else if(step == 2)
+            }
+            else if (step == 2)
             {
-                pack_len |= ((int(frame[i]) & 0x3) << 8);
+                pack_len |= (static_cast<std::size_t>(frame[i] & 0x3) << 8);
                 v1_pack_list.push_back(frame[i]);
                 step = 3;
-            }else if(step == 3)
+            }
+            else if (step == 3)
             {
                 v1_pack_list.push_back(frame[i]);
                 if (v1_pack_list.size() == 12)
                 {
                     if (_check_head_crc(v1_pack_list))
+                    {
                         step = 4;
+                    }
                     else
                     {
                         step = 0;
                         v1_pack_list.clear();
                     }
-
                 }
-
-            }else if(step == 4)
+            }
+            else if (step == 4)
             {
                 v1_pack_list.push_back(frame[i]);
                 if (v1_pack_list.size() == pack_len)
                 {
                     step = 0;
                     if (_check_pack_crc(v1_pack_list))
+                    {
+                        // Hand off only fully assembled and CRC-validated packets.
                         _process_cmd(v1_pack_list);
+                    }
                     v1_pack_list.clear();
                 }
-            }else
+            }
+            else
             {
                 step = 0;
                 v1_pack_list.clear();
             }
         }
 
-        // Originally 100ms for all cases; unable to solve
         if (bFirstLoop)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(_DJIR_PKT_QUERY_FIRST_LOOP_MS));
             bFirstLoop = false;
         }
         else
+        {
             std::this_thread::sleep_for(std::chrono::milliseconds(_DJIR_PKT_QUERY_INTERVAL_MS));
+        }
     }
 }
 
-void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
+void DJIR_SDK::DataHandle::_process_cmd(const std::vector<uint8_t>& data)
 {
-    uint8_t cmd_type = (uint8_t)data[3];
-    bool is_ok = false;
-    uint8_t cmd_key[2] = {0, 0};    // CmdSet and CmdID
+    if (data.size() < 14)
+    {
+        return;
+    }
 
-    // If it is a response frame, need to check the corresponding send command
+    const uint8_t cmd_type = data[3];
+    bool bOk = false;
+    uint8_t cmd_key[2] = {0, 0};
+
     if (cmd_type == 0x20)
     {
-        _rdcontent_lock.lock();
-        for(size_t i = 0; i < _cmd_list.size(); i++)
+        // Response frames are matched against the pending command deque by the
+        // header CRC currently used by this SDK family as its best-effort key.
+        std::lock_guard<std::mutex> lock(_rdcontent_lock);
+        const uint16_t uiDataCrc = ReadLeU16(data, 8);
+        for (auto it = _vecPendingCmds.begin(); it != _vecPendingCmds.end(); ++it)
         {
-            std::vector<uint8_t> cmd = _cmd_list[i];
-            if (cmd.size() >= 10)
+            if (it->vCmd.size() >= 14 && it->uiHeaderCrc == uiDataCrc)
             {
-                uint16_t last_cmd_crc = *((uint16_t*)&cmd.data()[8]);
-                uint16_t data_crc = *((uint16_t*)&data.data()[8]);
-                if (last_cmd_crc == data_crc)
-                {
-                    cmd_key[0] = (uint8_t)cmd[12];
-                    cmd_key[1] = (uint8_t)cmd[13];
-                    _cmd_list.erase(_cmd_list.begin() + i);
-                    is_ok = true;
-                    break;
-                }
+                cmd_key[0] = it->vCmd[12];
+                cmd_key[1] = it->vCmd[13];
+                _vecPendingCmds.erase(it);
+                bOk = true;
+                break;
             }
-        }
-        _rdcontent_lock.unlock();
-    }else
-    {
-        cmd_key[0] = (uint8_t)data[12]; // CmdSet
-        cmd_key[1] = (uint8_t)data[13]; // CmdID
-        is_ok = true;
-    }
-
-    if (is_ok)
-    {
-        static unsigned long ulMsgCnt = 0;
-        ulMsgCnt++;
-#ifdef _DEBUG_GIMBALMSG
-        printf ("MSG %lu on CAN\n", ulMsgCnt);
-#endif
-        switch (*(uint16_t*)&cmd_key[0]) {
-        case 0x000e:
-        {   // Response for posControl
-#ifdef _DEBUG_GIMBALMSG
-            printf("get posControl request\n");
-#endif
-            break;
-        }
-        case 0x010E:
-        {   // Response for speed control
-#ifdef _DEBUG_GIMBALMSG
-            printf ("get spd ctrl response\n");
-#endif
-            break;
-        }
-        case 0x090E:
-        {   // 设备版本号（响应帧 or 设备主动推送 1Hz，协议 2.3.4.10）
-            // 应答帧  (cmd_type==0x20): data[14]=return_code, data[15..18]=device_id, data[19..22]=version
-            // 推送帧  (cmd_type==0x03): data[14..17]=device_id, data[18..21]=version
-            uint32_t nDeviceId = 0;
-            uint32_t nVersion  = 0;
-            if (cmd_type == 0x20)
-            {
-                if (data.size() >= 27)
-                {
-                    nDeviceId = *reinterpret_cast<const uint32_t*>(&data[15]);
-                    nVersion  = *reinterpret_cast<const uint32_t*>(&data[19]);
-                }
-            }
-            else
-            {
-                if (data.size() >= 26)
-                {
-                    nDeviceId = *reinterpret_cast<const uint32_t*>(&data[14]);
-                    nVersion  = *reinterpret_cast<const uint32_t*>(&data[18]);
-                }
-            }
-            if (_device_version_callback && (nDeviceId != 0 || nVersion != 0))
-                _device_version_callback(nDeviceId, nVersion);
-            break;
-        }
-        
-        // 修改 _process_cmd 方法中的 case 0x020e 部分
-        case 0x020e:
-        {   // Response for getGimbalInfo
-        //            printf("get getGimbalInfo response\n");
-        //            if (data[13] == 0x00)
-        //                std::cout << "Data is not ready\n" << std::endl;
-        //            if (data[13] == 0x01)
-        //                std::cout << "The current angle is attitude angle\n"<<std::endl;
-        //            if (data[13] == 0x02)
-        //                std::cout << "The current angle is joint angle\n" << std::endl;
-        
-            _yaw    = *(int16_t*)&data.data()[16];  // originally 14 16 18, however dosen't work
-            _roll   = *(int16_t*)&data.data()[18];
-            _pitch  = *(int16_t*)&data.data()[20];
-#ifdef _DEBUG_GIMBALMSG
-            std::cout << "yaw = " << _yaw << " roll = " << _roll << " pitch = " << _pitch << std::endl;
-#endif
-            // 调用回调函数，如果已设置
-            if (_position_update_callback) {
-                _position_update_callback(_yaw, _roll, _pitch);
-            }
-            
-            _input_position_ready_flag = true;
-            _input_position_cond_var.notify_one();
-        
-            break;
-        }
-        case 0x080E:
-        {   // 手持云台参数推送（CmdSet=0x0E CmdID=0x08，协议 2.3.4.9）
-            // 数据布局（相对 data[14]）:
-            //   +0  : ctrl_byte  (uint8_t)
-            //   +1  : yaw_attitude    (int16_t LE)
-            //   +3  : roll_attitude   (int16_t LE)
-            //   +5  : pitch_attitude  (int16_t LE)
-            //   +7  : yaw_joint       (int16_t LE)
-            //   +9  : roll_joint      (int16_t LE)
-            //   +11 : pitch_joint     (int16_t LE)
-            // 最小有效长度 = 14（头）+ 1（ctrl）+ 12（6×int16）+ 4（CRC）= 31
-            if (data.size() >= 31)
-            {
-                TPushData push;
-                push.ctrl_byte      = static_cast<uint8_t>(data[14]);
-                push.bAnglesValid   = (push.ctrl_byte & 0x01) != 0;
-                push.nYawAttitude   = *reinterpret_cast<const int16_t*>(&data[15]);
-                push.nRollAttitude  = *reinterpret_cast<const int16_t*>(&data[17]);
-                push.nPitchAttitude = *reinterpret_cast<const int16_t*>(&data[19]);
-                push.nYawJoint      = *reinterpret_cast<const int16_t*>(&data[21]);
-                push.nRollJoint     = *reinterpret_cast<const int16_t*>(&data[23]);
-                push.nPitchJoint    = *reinterpret_cast<const int16_t*>(&data[25]);
-#ifdef _DEBUG_GIMBALMSG
-                printf("0x08 push: ctrl=0x%02X, att=[%d,%d,%d], jnt=[%d,%d,%d]\n",
-                    push.ctrl_byte,
-                    push.nYawAttitude, push.nRollAttitude, push.nPitchAttitude,
-                    push.nYawJoint,    push.nRollJoint,    push.nPitchJoint);
-#endif
-                if (_push_data_callback)
-                    _push_data_callback(push);
-            }
-            break;
-        }
-        case 0x0E0E:
-        {   // Response for recenter
-#ifdef _DEBUG_GIMBALMSG
-            printf("get recenter response\n");
-#endif
-            break;
-        }
-        case 0x120E:
-        {   // Response of focus motor position polling.
-#ifdef _DEBUG_GIMBALMSG
-            printf("get focus motor response\n");
-#endif
-            uint16_t SubCode = (uint8_t)data[13] + ((uint8_t)data[14]) << 8;    // Command ID and motor type
-
-            switch (SubCode)
-            {
-                case 0x0015:
-                {   // 0x00: Ronin focus motor, 0x15: position polling Seems not working with RS2.
-                    /// @todo: handel focus motor status message here
-
-                    uint16_t usStat = (uint8_t)data[13];    // byte 13: 1 - not cal. 2 - in progress 3 - finished
-                    uint32_t ulPos  = (uint32_t)data[4];    // byte 16~20: position in lim range, 0 ~ 4095 
-#ifdef _DEBUG_GIMBALMSG
-                    printf ("Stat: %d   Pos: %l\n", usStat, ulPos);
-#endif
-                }
-            }
-            break;
-        }
-        default:
-        {
-#ifdef _DEBUG_GIMBALMSG
-            printf("--get unhandeld request\n");
-            printf("--0x%04X\n", *(uint16_t*)&cmd_key[0]);
-            for (unsigned ui = 0; ui < data.size(); ui++)   // print dump data to console
-                printf ("%02u 0x%02X\n", ui, (uint8_t)data[ui]);
-#endif
-            break;
-        }
         }
     }
+    else
+    {
+        cmd_key[0] = data[12];
+        cmd_key[1] = data[13];
+        bOk = true;
+    }
 
+    if (!bOk)
+    {
+        return;
+    }
+
+    const uint16_t uiCmdKey = static_cast<uint16_t>(cmd_key[0]) |
+                              (static_cast<uint16_t>(cmd_key[1]) << 8);
+
+    switch (uiCmdKey)
+    {
+    case 0x090E:
+    {
+        uint32_t nDeviceId = 0;
+        uint32_t nVersion = 0;
+        if (cmd_type == 0x20)
+        {
+            if (data.size() >= 27)
+            {
+                nDeviceId = ReadLeU32(data, 15);
+                nVersion = ReadLeU32(data, 19);
+            }
+        }
+        else if (data.size() >= 26)
+        {
+            nDeviceId = ReadLeU32(data, 14);
+            nVersion = ReadLeU32(data, 18);
+        }
+
+        DeviceVersionCallback fnDeviceVersion;
+        {
+            std::lock_guard<std::mutex> lock(_callback_mutex);
+            fnDeviceVersion = _device_version_callback;
+        }
+        if (fnDeviceVersion && (nDeviceId != 0 || nVersion != 0))
+        {
+            fnDeviceVersion(nDeviceId, nVersion);
+        }
+        break;
+    }
+    case 0x020E:
+    {
+        if (data.size() < 22)
+        {
+            break;
+        }
+
+        const int16_t nYaw = ReadLeI16(data, 16);
+        const int16_t nRoll = ReadLeI16(data, 18);
+        const int16_t nPitch = ReadLeI16(data, 20);
+
+        {
+            // Publish the new sample under the same mutex/condvar domain used
+            // by get_position(), then notify outside the critical section.
+            std::lock_guard<std::mutex> lock(_input_position_mutex);
+            _stPositionSample.nYaw = nYaw;
+            _stPositionSample.nRoll = nRoll;
+            _stPositionSample.nPitch = nPitch;
+            _stPositionSample.bReady = true;
+        }
+        _input_position_cond_var.notify_one();
+
+        PositionUpdateCallback fnPositionUpdate;
+        {
+            // Take a callback snapshot so user code never runs under SDK mutexes.
+            std::lock_guard<std::mutex> lock(_callback_mutex);
+            fnPositionUpdate = _position_update_callback;
+        }
+        if (fnPositionUpdate)
+        {
+            fnPositionUpdate(nYaw, nRoll, nPitch);
+        }
+        break;
+    }
+    case 0x080E:
+    {
+        if (data.size() < 31)
+        {
+            break;
+        }
+
+        TPushData push;
+        push.ctrl_byte = data[14];
+        push.bAnglesValid = (push.ctrl_byte & 0x01) != 0;
+        push.nYawAttitude = ReadLeI16(data, 15);
+        push.nRollAttitude = ReadLeI16(data, 17);
+        push.nPitchAttitude = ReadLeI16(data, 19);
+        push.nYawJoint = ReadLeI16(data, 21);
+        push.nRollJoint = ReadLeI16(data, 23);
+        push.nPitchJoint = ReadLeI16(data, 25);
+
+        PushDataCallback fnPushData;
+        {
+            // Same snapshot rule as position callbacks.
+            std::lock_guard<std::mutex> lock(_callback_mutex);
+            fnPushData = _push_data_callback;
+        }
+        if (fnPushData)
+        {
+            fnPushData(push);
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }
 
-bool DJIR_SDK::DataHandle::_check_head_crc(std::vector<uint8_t> data)
+bool DJIR_SDK::DataHandle::_check_head_crc(const std::vector<uint8_t>& data)
 {
-    crc16_t crc16;
-    crc16 = crc16_init();
+    if (data.size() < 12)
+    {
+        return false;
+    }
+
+    crc16_t crc16 = crc16_init();
     crc16 = crc16_update(crc16, data.data(), 10);
     crc16 = crc16_finalize(crc16);
 
-    uint16_t recv_crc = (*(uint16_t*)&data.data()[data.size() - 2]);
-
-    if (crc16 == recv_crc)
-        return true;
-    return false;
-
+    const uint16_t recv_crc = ReadLeU16(data, data.size() - 2);
+    return crc16 == recv_crc;
 }
 
-bool DJIR_SDK::DataHandle::_check_pack_crc(std::vector<uint8_t> data)
+bool DJIR_SDK::DataHandle::_check_pack_crc(const std::vector<uint8_t>& data)
 {
-    crc32_t crc32;
-    crc32 = crc32_init();
+    if (data.size() < 4)
+    {
+        return false;
+    }
+
+    crc32_t crc32 = crc32_init();
     crc32 = crc32_update(crc32, data.data(), data.size() - 4);
     crc32 = crc32_finalize(crc32);
 
-    uint32_t recv_crc =  (*(uint32_t*)&data.data()[data.size() - 4]);
-
-    if (crc32 == recv_crc)
-        return true;
-    return false;
+    const uint32_t recv_crc = ReadLeU32(data, data.size() - 4);
+    return crc32 == recv_crc;
 }
-
 
 void DJIR_SDK::DataHandle::set_position_update_callback(PositionUpdateCallback callback)
 {
+    std::lock_guard<std::mutex> lock(_callback_mutex);
     _position_update_callback = callback;
 }
 
 void DJIR_SDK::DataHandle::set_push_callback(PushDataCallback callback)
 {
+    std::lock_guard<std::mutex> lock(_callback_mutex);
     _push_data_callback = callback;
 }
 
 void DJIR_SDK::DataHandle::set_device_version_callback(DeviceVersionCallback callback)
 {
+    std::lock_guard<std::mutex> lock(_callback_mutex);
     _device_version_callback = callback;
 }
