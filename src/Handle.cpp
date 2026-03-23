@@ -5,6 +5,8 @@
 #include "custom_crc32.h"
 
 #include <cstring>
+#include <iostream>
+#include <thread>
 
 namespace
 {
@@ -48,40 +50,63 @@ int16_t ReadLeI16(const std::vector<uint8_t>& data, std::size_t offset)
     return value;
 }
 
+void LogDataHandleLifecycle(const char* pszStage, const DJIR_SDK::DataHandle* pSelf)
+{
+#if defined(_DEBUG)
+    std::cerr << "[Lifecycle][DJIR_SDK::DataHandle] " << pszStage
+              << " this=" << pSelf
+              << " thread=" << std::this_thread::get_id()
+              << std::endl;
+#else
+    (void)pszStage;
+    (void)pSelf;
+#endif
+}
+
 } // namespace
 
 DJIR_SDK::DataHandle::DataHandle(void *pCanConnection)
     : _dev(pCanConnection)
-{}
+{
+    LogDataHandleLifecycle("ctor begin", this);
+    LogDataHandleLifecycle("ctor end", this);
+}
 
 DJIR_SDK::DataHandle::~DataHandle()
 {
+    LogDataHandleLifecycle("dtor begin", this);
     // Destruction always funnels through stop() so the worker lifecycle stays
     // identical whether shutdown is explicit or implicit.
     stop();
+    LogDataHandleLifecycle("dtor end", this);
 }
 
 void DJIR_SDK::DataHandle::start()
 {
+    LogDataHandleLifecycle("start begin", this);
     if (_thread.joinable())
     {
         // The SDK currently assumes a single worker per DataHandle instance.
         // Re-start while running is treated as a no-op instead of spawning a
         // second parser thread over the same CAN stream.
+        LogDataHandleLifecycle("start end", this);
         return;
     }
 
     _stopped.store(false);
     _thread = std::thread(&DataHandle::run, this);
+    LogDataHandleLifecycle("start end", this);
 }
 
 void DJIR_SDK::DataHandle::stop()
 {
+    LogDataHandleLifecycle("stop begin", this);
     _stopped.store(true);
     if (_thread.joinable())
     {
         _thread.join();
     }
+    LogDataHandleLifecycle("stop end", this);
 }
 
 void DJIR_SDK::DataHandle::add_cmd(std::vector<uint8_t> cmd)

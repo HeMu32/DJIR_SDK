@@ -5,6 +5,9 @@
 #include "USBCAN_SDK.h"
 using namespace USBCAN_SDK;
 
+#include <iostream>
+#include <thread>
+
 
 enum FLAG : uint8_t {
     BIT1 = 0x01,
@@ -19,6 +22,19 @@ enum FLAG : uint8_t {
 namespace
 {
 constexpr uint16_t kGetCurrentPositionTimeoutMs = 500;
+
+void LogDJIRoninLifecycle(const char* pszStage, const DJIR_SDK::DJIRonin* pSelf)
+{
+#if defined(_DEBUG)
+    std::cerr << "[Lifecycle][DJIR_SDK::DJIRonin] " << pszStage
+              << " this=" << pSelf
+              << " thread=" << std::this_thread::get_id()
+              << std::endl;
+#else
+    (void)pszStage;
+    (void)pSelf;
+#endif
+}
 
 bool EnqueueAndSendCmd(
     void* pPackThread,
@@ -44,6 +60,7 @@ bool EnqueueAndSendCmd(
 
 DJIR_SDK::DJIRonin::DJIRonin()
 {
+    LogDJIRoninLifecycle("ctor begin", this);
     _can_conn   = nullptr;  // must be nullptr before first connect()
     _pack_thread = nullptr; // must be nullptr before first connect()
     _position_ctrl_byte = 0;
@@ -52,10 +69,12 @@ DJIR_SDK::DJIRonin::DJIRonin()
     _position_ctrl_byte |= BIT1;    //MoveMode - ABSOLUTE_CONTROL
     _speed_ctrl_byte    |= BIT3;    //SpeedControl - DISABLED, FocalControl - DISABLED
     _cmd_cmb = new CmdCombine();
+    LogDJIRoninLifecycle("ctor end", this);
 }
 
 DJIR_SDK::DJIRonin::~DJIRonin()
 {
+    LogDJIRoninLifecycle("dtor begin", this);
     // disconnect() is idempotent and null-safe; handles DataHandle stop + CAN teardown.
     // Do NOT call ~CANConnection() directly here — disconnect() already does it,
     // and calling it again on a nullptr (after disconnect) would crash.
@@ -65,10 +84,12 @@ DJIR_SDK::DJIRonin::~DJIRonin()
         delete (CmdCombine*)_cmd_cmb;
         _cmd_cmb = nullptr;
     }
+    LogDJIRoninLifecycle("dtor end", this);
 }
 
 bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
 {
+    LogDJIRoninLifecycle("connect begin", this);
     int send_id = 0x223;    // CAN Tx No. for PC side
     int recv_id = 0x222;    // CAN Rx No. for PC side
     std::string stCANBoxType = "GC_USBCAN";
@@ -88,11 +109,14 @@ bool DJIR_SDK::DJIRonin::connect(int iDevIndex, int iCanIndex)
     // 原值 500ms，已降低至 1000ms；较短的等待与上层握手逻辑并不互斥，两者可共存。
     // 仍存在在低速主机或驱动响应慢时提前返回的风险，但上层握手会捕获此类情况。
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    return ((CANConnection*)_can_conn)->get_connection_status();
+    const bool bRet = ((CANConnection*)_can_conn)->get_connection_status();
+    LogDJIRoninLifecycle("connect end", this);
+    return bRet;
 }
 
 bool DJIR_SDK::DJIRonin::disconnect()
 {
+    LogDJIRoninLifecycle("disconnect begin", this);
     // 先停止 DataHandle 线程（设 _stopped=true 并 join），再关闭 CAN 连接，
     // 避免 CAN 关闭后 DataHandle 仍在访问已释放资源。
     // DataHandle::run() 每次循环最多睡眠 100ms，join 最迟在此之内完成。
@@ -107,6 +131,7 @@ bool DJIR_SDK::DJIRonin::disconnect()
         delete (CANConnection*)_can_conn;
         _can_conn = nullptr;
     }
+    LogDJIRoninLifecycle("disconnect end", this);
     return true;
 }
 

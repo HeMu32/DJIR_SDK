@@ -7,6 +7,27 @@
 #endif
 
 #include <cstdlib>
+#include <thread>
+
+namespace
+{
+
+template <typename TObject>
+void LogUSBCANLifecycle(const char* pszType, const char* pszStage, const TObject* pSelf)
+{
+#if defined(_DEBUG)
+    std::cerr << "[Lifecycle][" << pszType << "] " << pszStage
+              << " this=" << pSelf
+              << " thread=" << std::this_thread::get_id()
+              << std::endl;
+#else
+    (void)pszType;
+    (void)pszStage;
+    (void)pSelf;
+#endif
+}
+
+} // namespace
 
 using namespace USBCAN_SDK;
 
@@ -16,6 +37,7 @@ CanDev::CanDev(
         int         dev_index = 0, 
         int         can_index = 0)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CanDev", "ctor begin", this);
     _name = pdcan_name;
     _dev_type = (int)dev_type;
     _dev_index = dev_index;
@@ -37,10 +59,12 @@ CanDev::CanDev(
 
         _tunnel = get_can_dev(_dev_type, _can_index);
     }
+    LogUSBCANLifecycle("USBCAN_SDK::CanDev", "ctor end", this);
 }
 
 CanDev::~CanDev (void)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CanDev", "dtor begin", this);
     if (_tunnel)
     {
         delete _tunnel;
@@ -52,6 +76,7 @@ CanDev::~CanDev (void)
         CloseDevice(_dev_type, _dev_index);
         _is_open = false;
     }
+    LogUSBCANLifecycle("USBCAN_SDK::CanDev", "dtor end", this);
 }
 
 USBCAN_II* CanDev::get_can_dev(int dev_type, int can_index)
@@ -105,6 +130,7 @@ Status CanDev::close()
 
 CanTunnel::CanTunnel(void *can_dev, int can_index)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CanTunnel", "ctor begin", this);
     _dev = can_dev;
     _dev_type = ((CanDev*)_dev)->get_dev_type();
     _dev_index = ((CanDev*)_dev)->get_dev_index();
@@ -118,13 +144,16 @@ CanTunnel::CanTunnel(void *can_dev, int can_index)
     _recv_queue_handle = std::queue<std::vector<uint8_t>>();
     _recv_id_list = std::vector<uint32_t>();
 
+    LogUSBCANLifecycle("USBCAN_SDK::CanTunnel", "ctor end", this);
 }
 
 CanTunnel::~CanTunnel()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CanTunnel", "dtor begin", this);
     // Thread ownership lives in RecvCanData/CANConnection, not in the tunnel.
     // The tunnel only marks itself unavailable for send/receive here.
     _is_running = false;
+    LogUSBCANLifecycle("USBCAN_SDK::CanTunnel", "dtor end", this);
 }
 
 Status CanTunnel::init_can()
@@ -364,21 +393,27 @@ void* USBCAN_II::get_init_cfg_by_id()
 
 RecvCanData::RecvCanData(CanTunnel *can_tunnel)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "ctor begin", this);
     _stopped = false;
     _dev = can_tunnel;
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "ctor end", this);
 }
 
 RecvCanData::~RecvCanData()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "dtor begin", this);
     if (!_stopped)
     {
         stop();
     }
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "dtor end", this);
 }
 
 void RecvCanData::start()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "start begin", this);
     _thread = std::thread(&RecvCanData::run, this);
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "start end", this);
 }
 
 void RecvCanData::run()
@@ -400,11 +435,13 @@ void RecvCanData::run()
 
 void RecvCanData::stop()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "stop begin", this);
     _stopped = true;
     if (_thread.joinable())
     {
         _thread.join();
     }
+    LogUSBCANLifecycle("USBCAN_SDK::RecvCanData", "stop end", this);
 }
 
 
@@ -416,6 +453,7 @@ CANConnection::CANConnection(
         int         tunnel_id, 
         int         can_index)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "ctor begin", this);
     _is_connected   = false;
     _recv_thread    = nullptr;
     _device         = new CanDev(can_name, tunnel_type, tunnel_id, can_index);
@@ -445,10 +483,12 @@ CANConnection::CANConnection(
         _is_connected = true;
     else
         _is_connected = false;
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "ctor end", this);
 }
 
 CANConnection::~CANConnection (void)
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "dtor begin", this);
     _stopped = true;
 
     if (_recv_thread)
@@ -467,6 +507,7 @@ CANConnection::~CANConnection (void)
 
     _tunnel = nullptr;
     _is_connected = false;
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "dtor end", this);
 }
 
 bool CANConnection::get_connection_status()
@@ -502,11 +543,15 @@ Status CANConnection::start_can()
 
 void CANConnection::listen_thread()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "listen_thread begin", this);
     _recv_thread = new RecvCanData(_tunnel);
     _recv_thread->start();
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "listen_thread end", this);
 }
 
 void CANConnection::stop()
 {
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "stop begin", this);
     _stopped = true;
+    LogUSBCANLifecycle("USBCAN_SDK::CANConnection", "stop end", this);
 }
