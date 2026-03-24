@@ -25,7 +25,7 @@ constexpr uint16_t kGetCurrentPositionTimeoutMs = 500;
 
 void LogDJIRoninLifecycle(const char* pszStage, const DJIR_SDK::DJIRonin* pSelf)
 {
-#if defined(_DEBUG)
+#if defined(_DEBUG) && defined(_DEBUG_LIFECYCLE)
     std::cerr << "[Lifecycle][DJIR_SDK::DJIRonin] " << pszStage
               << " this=" << pSelf
               << " thread=" << std::this_thread::get_id()

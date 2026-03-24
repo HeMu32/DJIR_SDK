@@ -52,7 +52,7 @@ int16_t ReadLeI16(const std::vector<uint8_t>& data, std::size_t offset)
 
 void LogDataHandleLifecycle(const char* pszStage, const DJIR_SDK::DataHandle* pSelf)
 {
-#if defined(_DEBUG)
+#if defined(_DEBUG) && defined(_DEBUG_LIFECYCLE)
     std::cerr << "[Lifecycle][DJIR_SDK::DataHandle] " << pszStage
               << " this=" << pSelf
               << " thread=" << std::this_thread::get_id()

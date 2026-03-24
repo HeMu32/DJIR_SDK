@@ -15,7 +15,7 @@ namespace
 template <typename TObject>
 void LogUSBCANLifecycle(const char* pszType, const char* pszStage, const TObject* pSelf)
 {
-#if defined(_DEBUG)
+#if defined(_DEBUG) && defined(_DEBUG_LIFECYCLE)
     std::cerr << "[Lifecycle][" << pszType << "] " << pszStage
               << " this=" << pSelf
               << " thread=" << std::this_thread::get_id()
