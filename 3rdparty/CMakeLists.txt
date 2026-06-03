@@ -1,17 +1,12 @@
 cmake_minimum_required(VERSION 3.13)
 
-
-
 ###############################################################################
 ## 3RD-PARTY
 ## dependencies for the project
 ###############################################################################
 project(3rdparty LANGUAGES CXX)
 
-if(NOT DEFINED RSCA_USBCAN_SDK_DIR)
-	set(RSCA_USBCAN_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/USBCAN_SDK")
-endif()
-
+# RSCA_USBCAN_SDK_DIR is resolved by the parent DJIR_SDK/CMakeLists.txt.
 if(NOT EXISTS "${RSCA_USBCAN_SDK_DIR}/CMakeLists.txt")
 	message(FATAL_ERROR "[DJIR_SDK] Missing required dependency: ${RSCA_USBCAN_SDK_DIR}/CMakeLists.txt")
 endif()
